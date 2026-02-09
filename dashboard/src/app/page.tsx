@@ -466,7 +466,7 @@ export default function LandingPage() {
       <div className="relative z-10">
         <Nav />
         <Hero />
-        <StatsBar />
+        {/* StatsBar removed */}
         <Features />
         <HowItWorks />
         <AgentNative />
