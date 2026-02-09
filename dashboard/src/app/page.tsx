@@ -451,7 +451,7 @@ function Footer() {
           <a href="https://github.com/zhivkoto/uho-indexing" className="hover:text-uho-text-secondary transition-colors flex items-center gap-1.5" target="_blank" rel="noopener">
             <Github className="w-4 h-4" /> GitHub
           </a>
-          <a href="mailto:zhivko@limechain.tech" className="hover:text-uho-text-secondary transition-colors flex items-center gap-1.5" target="_blank" rel="noopener">
+          <a href="mailto:zhivko.p.todorov@gmail.com" className="hover:text-uho-text-secondary transition-colors flex items-center gap-1.5" target="_blank" rel="noopener">
             <Mail className="w-4 h-4" /> Contact
           </a>
         </div>
