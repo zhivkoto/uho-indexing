@@ -1,0 +1,283 @@
+/**
+ * Uho — Schema Generator
+ *
+ * Generates PostgreSQL DDL (CREATE TABLE, CREATE INDEX) from parsed IDL definitions.
+ * Each event type gets its own table with auto-generated columns matching the IDL fields,
+ * plus standard metadata columns (slot, block_time, tx_signature, etc.).
+ */
+
+import type { Pool } from 'pg';
+import type { ParsedIDL, ParsedEvent, ParsedField, ParsedInstruction, ProgramConfig, UserProgramEvent } from './types.js';
+import { toSnakeCase } from './idl-parser.js';
+
+// =============================================================================
+// Table Name Generation
+// =============================================================================
+
+/**
+ * Generates the PostgreSQL table name for a given program + event.
+ * Convention: {program_name}_{snake_case_event_name}
+ * Example: "sample_dex" + "SwapEvent" → "sample_dex_swap_event"
+ */
+export function eventTableName(programName: string, eventName: string): string {
+  return `${programName}_${toSnakeCase(eventName)}`;
+}
+
+// =============================================================================
+// Metadata Table
+// =============================================================================
+
+/**
+ * Generates DDL for the _uho_state metadata table.
+ * This table tracks indexer state per program (last slot, event count, status, etc.).
+ */
+export function generateMetadataTable(): string {
+  return `
+CREATE TABLE IF NOT EXISTS _uho_state (
+    id              SERIAL PRIMARY KEY,
+    program_id      TEXT NOT NULL UNIQUE,
+    program_name    TEXT NOT NULL,
+    last_slot       BIGINT DEFAULT 0,
+    last_signature  TEXT,
+    events_indexed  BIGINT DEFAULT 0,
+    status          TEXT DEFAULT 'stopped',
+    started_at      TIMESTAMPTZ,
+    last_poll_at    TIMESTAMPTZ,
+    error           TEXT,
+    updated_at      TIMESTAMPTZ DEFAULT NOW()
+);`.trim();
+}
+
+// =============================================================================
+// Event Table Generation
+// =============================================================================
+
+/**
+ * Generates a column definition string for a parsed field.
+ * Example: "input_amount BIGINT NOT NULL"
+ */
+function fieldToColumn(field: ParsedField): string {
+  const nullConstraint = field.nullable ? '' : ' NOT NULL';
+  const snakeName = toSnakeCase(field.name);
+  const quotedName = `"${snakeName}"`;
+  return `    ${quotedName.padEnd(22)} ${field.sqlType}${nullConstraint}`;
+}
+
+/**
+ * Generates the full CREATE TABLE DDL for a single event type.
+ * Includes standard metadata columns, IDL-derived columns, and indexes.
+ */
+export function generateEventTable(programName: string, event: ParsedEvent): string {
+  const tableName = eventTableName(programName, event.name);
+
+  // Build the column definitions for IDL fields
+  const fieldColumns = event.fields.map(fieldToColumn);
+
+  // Combine all actual column definitions (no comments or blank lines inside SQL)
+  const columns = [
+    '    id                   BIGSERIAL PRIMARY KEY',
+    '    slot                 BIGINT NOT NULL',
+    '    block_time           TIMESTAMPTZ',
+    '    tx_signature         TEXT NOT NULL',
+    '    ix_index             INTEGER NOT NULL',
+    '    inner_ix_index       INTEGER',
+    ...fieldColumns,
+    '    indexed_at            TIMESTAMPTZ DEFAULT NOW()',
+  ];
+
+  const createTable = `CREATE TABLE IF NOT EXISTS ${tableName} (\n${columns.join(',\n')}\n);`;
+
+  // Generate indexes for common query patterns
+  const indexes = [
+    `CREATE INDEX IF NOT EXISTS idx_${tableName}_slot ON ${tableName}(slot);`,
+    `CREATE INDEX IF NOT EXISTS idx_${tableName}_tx ON ${tableName}(tx_signature);`,
+    `CREATE INDEX IF NOT EXISTS idx_${tableName}_block_time ON ${tableName}(block_time);`,
+    // Unique constraint to prevent duplicate event inserts
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_${tableName}_tx ON ${tableName}(tx_signature, ix_index, COALESCE(inner_ix_index, -1));`,
+  ];
+
+  return [createTable, '', ...indexes].join('\n');
+}
+
+// =============================================================================
+// Instruction Table Generation
+// =============================================================================
+
+/**
+ * Generates the PostgreSQL table name for a given program + instruction.
+ * Convention: {program_name}_{snake_case_instruction_name}_ix
+ * Example: "solfi_v2" + "swap" → "solfi_v2_swap_ix"
+ */
+export function instructionTableName(programName: string, instructionName: string): string {
+  return `${programName}_${toSnakeCase(instructionName)}_ix`;
+}
+
+/**
+ * Generates the full CREATE TABLE DDL for a single instruction type.
+ * Includes metadata columns, arg columns, and account pubkey columns.
+ */
+/**
+ * Wraps a column name in double quotes to handle PostgreSQL reserved words.
+ */
+function quoteCol(name: string): string {
+  return `"${name}"`;
+}
+
+export function generateInstructionTable(programName: string, instruction: ParsedInstruction): string {
+  const tableName = instructionTableName(programName, instruction.name);
+
+  // Build arg columns (snake_case and quoted to handle reserved words)
+  const argColumns = instruction.args.map((field) => {
+    const nullConstraint = field.nullable ? '' : ' NOT NULL';
+    const snakeName = toSnakeCase(field.name);
+    return `    ${quoteCol(snakeName).padEnd(22)} ${field.sqlType}${nullConstraint}`;
+  });
+
+  // Build account columns (all TEXT for pubkeys, quoted)
+  const accountColumns = instruction.accounts.map((accName) => {
+    const colName = toSnakeCase(accName);
+    return `    ${quoteCol(colName).padEnd(22)} TEXT NOT NULL`;
+  });
+
+  const columns = [
+    '    "id"                   BIGSERIAL PRIMARY KEY',
+    '    "slot"                 BIGINT NOT NULL',
+    '    "block_time"           TIMESTAMPTZ',
+    '    "tx_signature"         TEXT NOT NULL',
+    '    "ix_index"             INTEGER NOT NULL',
+    ...argColumns,
+    ...accountColumns,
+    '    "indexed_at"            TIMESTAMPTZ DEFAULT NOW()',
+  ];
+
+  const createTable = `CREATE TABLE IF NOT EXISTS ${tableName} (\n${columns.join(',\n')}\n);`;
+
+  const indexes = [
+    `CREATE INDEX IF NOT EXISTS idx_${tableName}_slot ON ${tableName}("slot");`,
+    `CREATE INDEX IF NOT EXISTS idx_${tableName}_tx ON ${tableName}("tx_signature");`,
+    `CREATE INDEX IF NOT EXISTS idx_${tableName}_block_time ON ${tableName}("block_time");`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_${tableName}_tx ON ${tableName}("tx_signature", "ix_index");`,
+  ];
+
+  return [createTable, '', ...indexes].join('\n');
+}
+
+// =============================================================================
+// Full DDL Generation
+// =============================================================================
+
+/**
+ * Generates all DDL statements for a parsed IDL and its configured programs.
+ * Returns an array of SQL strings to execute in order.
+ *
+ * @param parsed - The normalized parsed IDL
+ * @param config - The program configuration (used for event whitelist filtering)
+ */
+export function generateDDL(parsed: ParsedIDL, config: ProgramConfig): string[] {
+  const ddl: string[] = [];
+
+  // Always include the metadata state table
+  ddl.push(generateMetadataTable());
+
+  // Filter events if a whitelist is configured
+  const events = config.events
+    ? parsed.events.filter((e) => config.events!.includes(e.name))
+    : parsed.events;
+
+  // Generate a table for each event type
+  for (const event of events) {
+    ddl.push(generateEventTable(parsed.programName, event));
+  }
+
+  // Generate a table for each instruction type
+  for (const instruction of parsed.instructions) {
+    ddl.push(generateInstructionTable(parsed.programName, instruction));
+  }
+
+  return ddl;
+}
+
+// =============================================================================
+// Schema Application
+// =============================================================================
+
+// =============================================================================
+// Platform Mode — Schema-Prefixed DDL Generation
+// =============================================================================
+
+/**
+ * Generates DDL for a user schema, creating tables inside the specified schema.
+ * Filters by enabled events from user_program_events.
+ *
+ * @param schemaName - The PostgreSQL schema (e.g., 'u_a1b2c3d4')
+ * @param parsed - The normalized parsed IDL
+ * @param enabledEvents - Which events/instructions the user has enabled
+ */
+export function generateUserSchemaDDL(
+  schemaName: string,
+  parsed: ParsedIDL,
+  enabledEvents: UserProgramEvent[]
+): string[] {
+  const ddl: string[] = [];
+
+  // Set search_path for this schema
+  ddl.push(`SET search_path TO ${schemaName}, public`);
+
+  // Always include metadata table
+  ddl.push(generateMetadataTable());
+
+  // Filter events by enabled status
+  const enabledEventNames = new Set(
+    enabledEvents
+      .filter((e) => e.enabled && e.eventType === 'event')
+      .map((e) => e.eventName)
+  );
+
+  for (const event of parsed.events) {
+    if (enabledEventNames.has(event.name)) {
+      ddl.push(generateEventTable(parsed.programName, event));
+    }
+  }
+
+  // Filter instructions by enabled status
+  const enabledInstructionNames = new Set(
+    enabledEvents
+      .filter((e) => e.enabled && e.eventType === 'instruction')
+      .map((e) => e.eventName)
+  );
+
+  for (const instruction of parsed.instructions) {
+    if (enabledInstructionNames.has(instruction.name)) {
+      ddl.push(generateInstructionTable(parsed.programName, instruction));
+    }
+  }
+
+  // Reset search_path
+  ddl.push('SET search_path TO public');
+
+  return ddl;
+}
+
+// =============================================================================
+// Schema Application
+// =============================================================================
+
+/**
+ * Applies an array of DDL statements to the database.
+ * Each statement is executed sequentially within a single transaction.
+ */
+export async function applySchema(pool: Pool, ddl: string[]): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const sql of ddl) {
+      await client.query(sql);
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw new Error(`Schema application failed: ${(err as Error).message}`);
+  } finally {
+    client.release();
+  }
+}
