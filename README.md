@@ -1,21 +1,44 @@
-# 🔊 Uho — Solana IDL-Driven Event Indexer
+<p align="center">
+  <img src="dashboard/public/logo.svg" alt="Uho" width="80" height="80" />
+</p>
 
-> Feed it an IDL, tell it what events to watch, get a typed API in minutes.
+<h1 align="center">Uho</h1>
 
-Uho is a lightweight Solana event indexer that reads Anchor IDL files and automatically:
+<p align="center">
+  <strong>Agent-native Solana indexing for your application</strong>
+</p>
 
-1. **Generates PostgreSQL tables** matching your program's event definitions
-2. **Polls Solana RPC** for transactions and decodes Anchor events
-3. **Serves a REST API** with auto-generated endpoints for every event type
+<p align="center">
+  Feed it an IDL, get a typed API in minutes.<br/>
+  Postgres tables, REST endpoints, and WebSocket subscriptions — auto-generated from your program's events.
+</p>
 
-No code generation, no manual schema writing, no custom decoders. Just point it at an IDL and go.
+<p align="center">
+  <a href="https://www.uhoindexing.com">Website</a> ·
+  <a href="https://api.uhoindexing.com/api/v1/health">Live API</a> ·
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#for-agents">For Agents</a>
+</p>
+
+---
+
+## Why Uho?
+
+Most Solana indexing solutions require weeks of setup — custom decoders, manual schema design, infrastructure management. Uho flips that:
+
+- **Upload an Anchor IDL** → get PostgreSQL tables with correct types for every event field
+- **Instant REST APIs** → auto-generated endpoints with filtering, pagination, and sorting
+- **Real-time WebSocket streams** → sub-second event delivery for dashboards and bots
+- **Multi-tenant isolation** → each project gets its own schema and endpoints
+
+No subgraph manifests. No YAML configs. No custom decoders. Just your IDL and two commands.
 
 ## Quick Start
 
 ```bash
 # Clone and install
-git clone https://github.com/zhivkoto/uho.git
-cd uho
+git clone https://github.com/zhivkoto/uho-indexing.git
+cd uho-indexing
 npm install
 
 # Initialize a project
@@ -30,28 +53,100 @@ npm run cli -- schema --apply
 npm run cli -- start
 ```
 
+Your API is now live. Query events at `http://localhost:3000/api/v1/{program}/{event}`.
+
 ## How It Works
 
 ```
-┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
-│ Anchor   │ ──▶ │ IDL      │ ──▶ │ Schema   │ ──▶ │ Postgres │
-│ IDL JSON │     │ Parser   │     │ Generator│     │ Tables   │
-└──────────┘     └──────────┘     └──────────┘     └──────────┘
-                                                         │
-┌──────────┐     ┌──────────┐     ┌──────────┐          │
-│ Solana   │ ──▶ │ TX       │ ──▶ │ Event    │ ──▶ INSERT
-│ RPC      │     │ Poller   │     │ Decoder  │
-└──────────┘     └──────────┘     └──────────┘
-                                                         │
-                 ┌──────────┐     ┌──────────┐          │
-                 │ REST API │ ◀── │ Fastify  │ ◀── SELECT
-                 │ Client   │     │ Server   │
-                 └──────────┘     └──────────┘
+Anchor IDL ──▶ IDL Parser ──▶ Schema Generator ──▶ PostgreSQL Tables
+                                                          │
+Solana RPC ──▶ TX Poller ──▶ Event Decoder ──────▶ INSERT │
+                                                          │
+               REST API  ◀── Fastify Server ◀──── SELECT ─┘
 ```
 
-## Configuration
+1. **Parse** — Reads your Anchor IDL, extracts events and field types
+2. **Generate** — Creates PostgreSQL tables matching event definitions  
+3. **Index** — Polls Solana RPC, decodes transactions, writes events to Postgres
+4. **Serve** — Auto-generates REST + WebSocket endpoints for every event type
 
-Create `uho.yaml` in your project root (or use `uho init`):
+## For Agents
+
+Uho is built for the agentic era. Every endpoint returns typed JSON that agents can parse without extraction — no HTML scraping, no guessing.
+
+```typescript
+// Your agent can discover available events
+const schema = await fetch("https://api.uhoindexing.com/api/v1/schema");
+
+// Query indexed events with filters
+const events = await fetch(
+  "https://api.uhoindexing.com/api/v1/pump_fun/create_event?limit=10"
+);
+
+// Subscribe to real-time events via WebSocket
+const ws = new WebSocket("wss://api.uhoindexing.com/ws");
+ws.send(JSON.stringify({ subscribe: "pump_fun/create_event" }));
+```
+
+**Agent-native features:**
+- **Structured output** — Typed JSON responses, no extraction needed
+- **Schema introspection** — Discover events, fields, and types via `/schema`
+- **Webhook triggers** — Push events to your agent's endpoint in real-time
+- **SKILL.md** — Agent onboarding file at [uhoindexing.com/skill.md](https://www.uhoindexing.com/skill.md)
+
+## CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `uho init` | Scaffold a new project with config template |
+| `uho schema` | Generate DDL from IDL (dry run) |
+| `uho schema --apply` | Generate and apply DDL to database |
+| `uho start` | Start the indexer + API server |
+| `uho status` | Show indexer health and statistics |
+| `uho stop` | Gracefully stop the running indexer |
+
+## Auto-Generated API
+
+For each event type in your IDL:
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/{program}/{event}` | List events (paginated, filterable) |
+| `GET` | `/api/v1/{program}/{event}/count` | Count total events |
+| `GET` | `/api/v1/{program}/{event}/:txSignature` | Get events by transaction |
+| `GET` | `/api/v1/status` | Indexer status |
+| `GET` | `/api/v1/health` | Health check |
+| `WS` | `/ws` | Real-time event subscriptions |
+
+### Query Parameters
+
+```bash
+# List recent swap events
+curl "http://localhost:3000/api/v1/my_dex/swap_event?limit=10&order=desc"
+
+# Filter by field
+curl "http://localhost:3000/api/v1/my_dex/swap_event?input_mint=So111..."
+
+# Time range
+curl "http://localhost:3000/api/v1/my_dex/swap_event?from=2026-01-01&to=2026-02-01"
+```
+
+## Type Mapping
+
+Anchor IDL types are automatically mapped to PostgreSQL:
+
+| Anchor Type | PostgreSQL Type |
+|-------------|----------------|
+| `u8`, `u16`, `u32`, `i8`–`i32` | `INTEGER` |
+| `u64`, `i64` | `BIGINT` |
+| `u128`, `i128` | `NUMERIC(39,0)` |
+| `bool` | `BOOLEAN` |
+| `string` | `TEXT` |
+| `pubkey` | `TEXT` (base58) |
+| `Vec<T>`, structs | `JSONB` |
+| `Option<T>` | Same as T (nullable) |
+
+## Configuration
 
 ```yaml
 version: 1
@@ -66,10 +161,8 @@ database:
 
 programs:
   - name: my_program
-    programId: "YourProgramId111111111111111111111111111111"
+    programId: "YourProgramId..."
     idl: ./idls/my_program.json
-    # events:           # Optional: whitelist specific events
-    #   - SwapEvent
 
 api:
   port: 3000
@@ -80,98 +173,16 @@ ingestion:
   batchSize: 25
 ```
 
-## CLI Commands
+## Architecture
 
-| Command | Description |
-|---------|-------------|
-| `uho init` | Scaffold a new project with config template |
-| `uho schema` | Generate DDL from IDL (dry run) |
-| `uho schema --apply` | Generate and apply DDL to database |
-| `uho start` | Start the indexer + API server |
-| `uho status` | Show indexer health and statistics |
-| `uho stop` | Gracefully stop the running indexer |
-
-Run via: `npm run cli -- <command>` or `npx tsx src/cli/index.ts <command>`
-
-## Auto-Generated API
-
-For each event type in your IDL, Uho creates these endpoints:
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/v1/{program}/{event}` | List events (paginated) |
-| `GET` | `/api/v1/{program}/{event}/count` | Count total events |
-| `GET` | `/api/v1/{program}/{event}/:txSignature` | Get events by tx |
-| `GET` | `/api/v1/status` | Indexer status |
-| `GET` | `/api/v1/health` | Health check |
-
-### Query Parameters
-
-| Parameter | Description |
-|-----------|-------------|
-| `limit` | Results per page (1-1000, default 50) |
-| `offset` | Pagination offset |
-| `orderBy` | Sort column (default: `slot`) |
-| `order` | `asc` or `desc` (default: `desc`) |
-| `from` / `to` | Filter by block_time (ISO 8601) |
-| `slotFrom` / `slotTo` | Filter by slot range |
-| `{field}` | Exact match on any IDL field |
-
-### Example
-
-```bash
-# List recent swap events
-curl "http://localhost:3000/api/v1/sample_dex/swap_event?limit=10"
-
-# Filter by input mint
-curl "http://localhost:3000/api/v1/sample_dex/swap_event?input_mint=So111..."
-
-# Count events
-curl "http://localhost:3000/api/v1/sample_dex/swap_event/count"
 ```
-
-Response format:
-
-```json
-{
-  "data": [
-    {
-      "id": 1,
-      "slot": 298765432,
-      "block_time": "2025-07-12T03:45:00.000Z",
-      "tx_signature": "5abc...",
-      "amm": "...",
-      "input_mint": "So111...",
-      "input_amount": "1000000",
-      "output_mint": "EPjF...",
-      "output_amount": "500000"
-    }
-  ],
-  "pagination": {
-    "limit": 10,
-    "offset": 0,
-    "total": 1234
-  }
-}
+src/
+├── core/           # IDL parsing, schema generation, config, DB
+├── ingestion/      # Solana RPC poller, event decoder, DB writer
+├── api/            # Fastify server, auto-generated routes, WebSocket
+├── cli/            # CLI commands (init, start, stop, status, schema)
+└── platform/       # Multi-tenant auth, usage tracking, webhooks
 ```
-
-## Type Mapping
-
-Uho automatically maps Anchor IDL types to PostgreSQL columns:
-
-| Anchor Type | PostgreSQL Type |
-|-------------|----------------|
-| `u8`, `u16`, `u32`, `i8`-`i32` | `INTEGER` |
-| `u64`, `i64` | `BIGINT` |
-| `u128`, `i128` | `NUMERIC(39,0)` |
-| `f32`, `f64` | `DOUBLE PRECISION` |
-| `bool` | `BOOLEAN` |
-| `string` | `TEXT` |
-| `pubkey` | `TEXT` (base58) |
-| `bytes` | `BYTEA` |
-| `Vec<T>` | `JSONB` |
-| `Option<T>` | Same as T (nullable) |
-| `defined` structs | `JSONB` |
 
 ## Prerequisites
 
@@ -179,49 +190,6 @@ Uho automatically maps Anchor IDL types to PostgreSQL columns:
 - **PostgreSQL** running locally
 - **Anchor IDL** (v0.30+ format) for your Solana program
 
-## Development
-
-```bash
-# Run tests
-npm test
-
-# Type check
-npm run lint
-
-# Watch mode
-npm run test:watch
-
-# Run demo
-npm run demo
-```
-
-## Architecture
-
-```
-src/
-├── core/
-│   ├── types.ts            # Shared type definitions
-│   ├── idl-parser.ts       # Anchor IDL → normalized events/fields
-│   ├── config.ts           # YAML config loader + Zod validation
-│   ├── schema-generator.ts # IDL → PostgreSQL DDL
-│   └── db.ts               # PostgreSQL connection pool
-├── ingestion/
-│   ├── poller.ts           # Solana RPC transaction poller
-│   ├── decoder.ts          # Anchor event decoder
-│   └── writer.ts           # PostgreSQL event writer
-├── api/
-│   ├── server.ts           # Fastify server setup
-│   └── routes.ts           # Auto-generated REST routes
-└── cli/
-    ├── index.ts            # CLI entrypoint
-    ├── init.ts             # Project scaffolding
-    ├── start.ts            # Start indexer + API
-    ├── status.ts           # Health check
-    ├── stop.ts             # Graceful shutdown
-    └── schema.ts           # Schema management
-```
-
 ## License
 
 MIT
-
