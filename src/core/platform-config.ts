@@ -36,8 +36,8 @@ export interface PlatformConfig {
 
 /** Free tier resource limits */
 export const FREE_TIER_LIMITS = {
-  programs: 1,
-  eventsIndexed: 1000,
+  programs: 3,
+  eventsIndexed: 5000,
   apiCallsPerMonth: 50_000,
   wsConnections: 5,
   customViews: 3,
