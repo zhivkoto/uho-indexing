@@ -15,4 +15,5 @@ USER app
 
 EXPOSE 3010 3012
 
-CMD ["npx", "tsx", "src/cli/index.ts", "platform", "start"]
+# Use shell form so env vars are properly inherited
+CMD npx tsx src/cli/index.ts platform start
