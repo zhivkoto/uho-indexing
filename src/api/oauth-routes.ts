@@ -56,6 +56,14 @@ export function registerOAuthRoutes(
     google: !!config.googleClientId && !!config.googleClientSecret,
     github: !!config.githubClientId && !!config.githubClientSecret,
     privy: !!config.privyAppId && !!config.privyAppSecret,
+    _debug: {
+      hasGoogleId: !!process.env.GOOGLE_CLIENT_ID,
+      hasGoogleSecret: !!process.env.GOOGLE_CLIENT_SECRET,
+      hasGithubId: !!process.env.GITHUB_CLIENT_ID,
+      hasPrivyId: !!process.env.PRIVY_APP_ID,
+      googleIdLen: (process.env.GOOGLE_CLIENT_ID || '').length,
+      configGoogleIdLen: (config.googleClientId || '').length,
+    },
   }));
 
   // -----------------------------------------------------------------------
