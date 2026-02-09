@@ -150,7 +150,7 @@ function Nav() {
         <div className="hidden md:flex items-center justify-center gap-8 text-sm text-uho-text-secondary absolute inset-0">
           <a href="#features" className="hover:text-uho-text-primary transition-colors">Features</a>
           <a href="#how-it-works" className="hover:text-uho-text-primary transition-colors">How it works</a>
-          <a href="#agents" className="hover:text-uho-text-primary transition-colors">For Agents</a>
+          <a href="/skill.md" className="hover:text-uho-text-primary transition-colors">For Agents</a>
         </div>
         <div className="flex items-center gap-3 shrink-0 relative z-10">
           <Link href="/login" className="text-sm text-uho-text-secondary hover:text-uho-text-primary transition-colors px-3 py-1.5">
