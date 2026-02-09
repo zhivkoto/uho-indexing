@@ -199,7 +199,7 @@ function Hero() {
               href="/register"
               className="group inline-flex items-center gap-2 bg-uho-accent text-uho-base font-semibold px-7 py-3.5 rounded-full hover:bg-uho-accent-light transition-all shadow-accent-glow hover:shadow-accent-glow-lg"
             >
-              Start Indexing
+              Get Started
               <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
             </Link>
             <a
@@ -426,7 +426,7 @@ function CTA() {
               href="/register"
               className="group inline-flex items-center gap-2 bg-uho-accent text-uho-base font-semibold px-8 py-3.5 rounded-full hover:bg-uho-accent-light transition-all shadow-accent-glow hover:shadow-accent-glow-lg text-lg"
             >
-              Get Started Free
+              Get Started
               <ArrowRight className="w-5 h-5 group-hover:translate-x-0.5 transition-transform" />
             </Link>
           </div>

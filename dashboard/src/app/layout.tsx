@@ -4,8 +4,21 @@ import { Providers } from '@/components/providers';
 import { Toaster } from 'sonner';
 
 export const metadata: Metadata = {
-  title: 'Uho Indexing',
-  description: 'Solana Event Indexer Dashboard',
+  title: 'Uho — IDL-Driven Solana Event Indexer',
+  description: 'Feed it an IDL, get a typed API in minutes. Postgres tables, REST endpoints, and WebSocket subscriptions — auto-generated from your program\'s events.',
+  metadataBase: new URL('https://www.uhoindexing.com'),
+  openGraph: {
+    title: 'Uho — IDL-Driven Solana Event Indexer',
+    description: 'Feed it an IDL, get a typed API in minutes. Postgres tables, REST endpoints, and WebSocket subscriptions — auto-generated.',
+    url: 'https://www.uhoindexing.com',
+    siteName: 'Uho',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Uho — IDL-Driven Solana Event Indexer',
+    description: 'Feed it an IDL, get a typed API in minutes. Auto-generated Postgres tables, REST endpoints, and WebSocket subscriptions.',
+  },
 };
 
 export default function RootLayout({
