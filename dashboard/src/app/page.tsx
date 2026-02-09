@@ -180,10 +180,10 @@ function Hero() {
           </div>
 
           <h1 className="text-5xl md:text-[72px] font-bold tracking-tight leading-[1.05] mb-6">
-            <span className="text-uho-text-primary">Index Solana events</span>
+            <span className="bg-gradient-to-r from-uho-accent via-uho-accent-light to-uho-accent bg-clip-text text-transparent">Agent-native Solana Indexing</span>
             <br />
-            <span className="bg-gradient-to-r from-uho-accent via-uho-accent-light to-uho-accent bg-clip-text text-transparent">
-              without the busywork
+            <span className="text-uho-text-primary">
+              for your application
             </span>
           </h1>
 
