@@ -4,20 +4,20 @@ import { Providers } from '@/components/providers';
 import { Toaster } from 'sonner';
 
 export const metadata: Metadata = {
-  title: 'Uho — IDL-Driven Solana Event Indexer',
-  description: 'Feed it an IDL, get a typed API in minutes. Postgres tables, REST endpoints, and WebSocket subscriptions — auto-generated from your program\'s events.',
+  title: 'Uho — Agent-Native Solana Indexer',
+  description: 'Hassle-free Solana indexing for the Agentic era.',
   metadataBase: new URL('https://www.uhoindexing.com'),
   openGraph: {
-    title: 'Uho — IDL-Driven Solana Event Indexer',
-    description: 'Feed it an IDL, get a typed API in minutes. Postgres tables, REST endpoints, and WebSocket subscriptions — auto-generated.',
+    title: 'Uho — Agent-Native Solana Indexer',
+    description: 'Hassle-free Solana indexing for the Agentic era.',
     url: 'https://www.uhoindexing.com',
     siteName: 'Uho',
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Uho — IDL-Driven Solana Event Indexer',
-    description: 'Feed it an IDL, get a typed API in minutes. Auto-generated Postgres tables, REST endpoints, and WebSocket subscriptions.',
+    title: 'Uho — Agent-Native Solana Indexer',
+    description: 'Hassle-free Solana indexing for the Agentic era.',
   },
   icons: {
     icon: [

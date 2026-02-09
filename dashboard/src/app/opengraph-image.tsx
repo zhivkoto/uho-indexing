@@ -1,7 +1,7 @@
 import { ImageResponse } from 'next/og';
 
 export const runtime = 'edge';
-export const alt = 'Uho — IDL-Driven Solana Event Indexer';
+export const alt = 'Uho — Agent-Native Solana Indexer';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
@@ -96,7 +96,7 @@ export default async function Image() {
               marginTop: '8px',
             }}
           >
-            IDL-Driven Solana Event Indexer
+            Agent-Native Solana Indexer
           </span>
         </div>
 
@@ -112,7 +112,7 @@ export default async function Image() {
             lineHeight: 1.5,
           }}
         >
-          Feed it an IDL, get a typed API in minutes. Postgres tables, REST endpoints, and WebSocket subscriptions — auto-generated.
+          Hassle-free Solana indexing for the Agentic era.
         </div>
 
         {/* Bottom bar */}
