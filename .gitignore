@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.uho/
+*.log
+uho.yaml
+idls/
+.env
+.env.local
+*.html
+*.pdf
