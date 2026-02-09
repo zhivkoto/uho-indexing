@@ -57,7 +57,7 @@ export async function sendVerificationEmail(
 ): Promise<void> {
   const resend = getResendClient(apiKey);
   await resend.emails.send({
-    from: process.env.EMAIL_FROM || 'Uho <noreply@uho.dev>',
+    from: process.env.EMAIL_FROM || 'Uho <noreply@uhoindexing.com>',
     to: email,
     subject: 'Verify your Uho account',
     html: `
@@ -84,11 +84,11 @@ export async function sendPasswordResetEmail(
   token: string
 ): Promise<void> {
   const resend = getResendClient(apiKey);
-  const dashboardUrl = process.env.DASHBOARD_URL || 'https://app.uho.dev';
+  const dashboardUrl = process.env.DASHBOARD_URL || 'https://www.uhoindexing.com';
   const resetUrl = `${dashboardUrl}/reset-password?token=${token}`;
 
   await resend.emails.send({
-    from: process.env.EMAIL_FROM || 'Uho <noreply@uho.dev>',
+    from: process.env.EMAIL_FROM || 'Uho <noreply@uhoindexing.com>',
     to: email,
     subject: 'Reset your Uho password',
     html: `

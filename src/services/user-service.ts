@@ -372,7 +372,7 @@ export class UserService {
     // Create new user
     const userId = crypto.randomUUID();
     const schemaName = this.generateSchemaName(userId);
-    const userEmail = email?.toLowerCase() || `${walletAddress.slice(0, 8)}@wallet.${process.env.EMAIL_DOMAIN || 'uho.dev'}`;
+    const userEmail = email?.toLowerCase() || `${walletAddress.slice(0, 8)}@wallet.${process.env.EMAIL_DOMAIN || 'uhoindexing.com'}`;
 
     await this.pool.query(
       `INSERT INTO users (id, email, password_hash, verified, schema_name, wallet_address)
