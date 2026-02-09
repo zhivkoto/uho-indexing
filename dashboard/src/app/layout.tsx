@@ -4,7 +4,7 @@ import { Providers } from '@/components/providers';
 import { Toaster } from 'sonner';
 
 export const metadata: Metadata = {
-  title: 'Uho Dashboard',
+  title: 'Uho Indexing',
   description: 'Solana Event Indexer Dashboard',
 };
 
