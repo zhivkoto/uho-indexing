@@ -173,17 +173,6 @@ ingestion:
   batchSize: 25
 ```
 
-## Architecture
-
-```
-src/
-├── core/           # IDL parsing, schema generation, config, DB
-├── ingestion/      # Solana RPC poller, event decoder, DB writer
-├── api/            # Fastify server, auto-generated routes, WebSocket
-├── cli/            # CLI commands (init, start, stop, status, schema)
-└── platform/       # Multi-tenant auth, usage tracking, webhooks
-```
-
 ## Prerequisites
 
 - **Node.js** ≥ 20
