@@ -42,7 +42,7 @@ function AnimatedTerminal() {
     { type: 'out', text: '✓ Created REST + WebSocket endpoints' },
     { type: 'gap' },
     { type: 'cmd', text: '$ npx uho start' },
-    { type: 'out', text: '● Indexer live → https://api.uho.dev/v1/my_program' },
+    { type: 'out', text: '● Indexer live → https://api.uhoindexing.com/v1/my_program' },
     { type: 'gap' },
     { type: 'cmd', text: '$ curl /v1/my_program/events/SwapExecuted?limit=5' },
     { type: 'out', text: '{ "data": [{ "user": "7xK...", "amount": 1500 }] }' },
@@ -94,7 +94,7 @@ function AnimatedTerminal() {
                   <span className="text-[#34D399]">●</span>{' '}
                   <span className="text-uho-text-tertiary">
                     Indexer live →{' '}
-                    <span className="text-uho-accent">https://api.uho.dev/v1/my_program</span>
+                    <span className="text-uho-accent">https://api.uhoindexing.com/v1/my_program</span>
                   </span>
                 </>
               ) : (
@@ -380,7 +380,7 @@ function AgentNative() {
             <pre className="p-6 font-mono text-[13px] leading-relaxed text-uho-text-secondary overflow-x-auto">
               <code>{`// Your agent queries Uho directly
 const events = await fetch(
-  "https://api.uho.dev/v1/my_program" +
+  "https://api.uhoindexing.com/v1/my_program" +
   "/events/SwapExecuted" +
   "?where=amount.gte:1000" +
   "&order=slot.desc&limit=10"
@@ -392,7 +392,7 @@ const { data } = await events.json();
 
 // Or subscribe to real-time events
 const ws = new WebSocket(
-  "wss://api.uho.dev/v1/my_program/ws"
+  "wss://api.uhoindexing.com/v1/my_program/ws"
 );
 ws.send(JSON.stringify({
   subscribe: "SwapExecuted",
