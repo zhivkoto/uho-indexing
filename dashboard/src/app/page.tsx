@@ -141,17 +141,17 @@ function StatsBar() {
 function Nav() {
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 border-b border-uho-border/50 bg-uho-base/70 backdrop-blur-xl">
-      <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2.5">
-          <img src="/logo.svg" alt="Uho" className="w-8 h-8 rounded-lg shadow-accent-glow" />
+      <div className="max-w-6xl mx-auto px-6 h-16 flex items-center">
+        <Link href="/" className="flex items-center gap-2.5 shrink-0">
+          <img src="/logo.svg" alt="Uho" className="w-10 h-10 rounded-lg shadow-accent-glow" />
           <span className="font-semibold text-lg text-uho-text-primary tracking-tight">Uho</span>
         </Link>
-        <div className="hidden md:flex items-center gap-8 text-sm text-uho-text-secondary">
+        <div className="hidden md:flex items-center justify-center gap-8 text-sm text-uho-text-secondary flex-1">
           <a href="#features" className="hover:text-uho-text-primary transition-colors">Features</a>
           <a href="#how-it-works" className="hover:text-uho-text-primary transition-colors">How it works</a>
           <a href="#agents" className="hover:text-uho-text-primary transition-colors">For Agents</a>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 shrink-0">
           <Link href="/login" className="text-sm text-uho-text-secondary hover:text-uho-text-primary transition-colors px-3 py-1.5">
             Sign in
           </Link>
