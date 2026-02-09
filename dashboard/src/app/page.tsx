@@ -143,9 +143,7 @@ function Nav() {
     <nav className="fixed top-0 left-0 right-0 z-50 border-b border-uho-border/50 bg-uho-base/70 backdrop-blur-xl">
       <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-uho-accent to-uho-accent-dark flex items-center justify-center font-bold text-sm text-uho-base shadow-accent-glow">
-            U
-          </div>
+          <img src="/logo.svg" alt="Uho" className="w-8 h-8 rounded-lg shadow-accent-glow" />
           <span className="font-semibold text-lg text-uho-text-primary tracking-tight">Uho</span>
         </Link>
         <div className="hidden md:flex items-center gap-8 text-sm text-uho-text-secondary">

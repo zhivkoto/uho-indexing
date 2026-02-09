@@ -19,6 +19,14 @@ export const metadata: Metadata = {
     title: 'Uho — IDL-Driven Solana Event Indexer',
     description: 'Feed it an IDL, get a typed API in minutes. Auto-generated Postgres tables, REST endpoints, and WebSocket subscriptions.',
   },
+  icons: {
+    icon: [
+      { url: '/favicon-32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/favicon-48.png', sizes: '48x48', type: 'image/png' },
+      { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+    ],
+    apple: '/apple-touch-icon.png',
+  },
 };
 
 export default function RootLayout({
