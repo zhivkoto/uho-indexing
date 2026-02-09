@@ -1,0 +1,147 @@
+{
+  "address": "DEXSwap111111111111111111111111111111111111",
+  "metadata": {
+    "name": "sample_dex",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Sample DEX program for Uho testing"
+  },
+  "instructions": [
+    {
+      "name": "swap",
+      "discriminator": [248, 198, 158, 145, 225, 117, 135, 200],
+      "accounts": [
+        { "name": "user", "writable": false, "signer": true },
+        { "name": "pool", "writable": true, "signer": false },
+        { "name": "inputTokenAccount", "writable": true, "signer": false },
+        { "name": "outputTokenAccount", "writable": true, "signer": false },
+        { "name": "tokenProgram", "writable": false, "signer": false }
+      ],
+      "args": [
+        { "name": "amountIn", "type": "u64" },
+        { "name": "minimumAmountOut", "type": "u64" }
+      ]
+    },
+    {
+      "name": "addLiquidity",
+      "discriminator": [181, 157, 89, 67, 143, 182, 52, 72],
+      "accounts": [
+        { "name": "provider", "writable": false, "signer": true },
+        { "name": "pool", "writable": true, "signer": false },
+        { "name": "tokenAAccount", "writable": true, "signer": false },
+        { "name": "tokenBAccount", "writable": true, "signer": false },
+        { "name": "lpTokenAccount", "writable": true, "signer": false },
+        { "name": "tokenProgram", "writable": false, "signer": false }
+      ],
+      "args": [
+        { "name": "tokenAAmount", "type": "u64" },
+        { "name": "tokenBAmount", "type": "u64" }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Pool",
+      "discriminator": [241, 154, 109, 4, 17, 177, 109, 86]
+    },
+    {
+      "name": "UserPosition",
+      "discriminator": [117, 176, 212, 199, 245, 44, 111, 23]
+    }
+  ],
+  "events": [
+    {
+      "name": "SwapEvent",
+      "discriminator": [64, 198, 205, 232, 38, 8, 113, 226],
+      "fields": [
+        { "name": "amm", "type": "pubkey" },
+        { "name": "inputMint", "type": "pubkey" },
+        { "name": "inputAmount", "type": "u64" },
+        { "name": "outputMint", "type": "pubkey" },
+        { "name": "outputAmount", "type": "u64" },
+        { "name": "fee", "type": "u64" },
+        { "name": "timestamp", "type": "i64" }
+      ]
+    },
+    {
+      "name": "LiquidityEvent",
+      "discriminator": [173, 42, 124, 78, 51, 62, 5, 199],
+      "fields": [
+        { "name": "pool", "type": "pubkey" },
+        { "name": "provider", "type": "pubkey" },
+        { "name": "tokenAMint", "type": "pubkey" },
+        { "name": "tokenBMint", "type": "pubkey" },
+        { "name": "tokenAAmount", "type": "u64" },
+        { "name": "tokenBAmount", "type": "u64" },
+        { "name": "lpTokensMinted", "type": "u64" },
+        { "name": "action", "type": "u8" }
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "Pool",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "authority", "type": "pubkey" },
+          { "name": "tokenAMint", "type": "pubkey" },
+          { "name": "tokenBMint", "type": "pubkey" },
+          { "name": "tokenAReserve", "type": "u64" },
+          { "name": "tokenBReserve", "type": "u64" },
+          { "name": "lpMint", "type": "pubkey" },
+          { "name": "feeRate", "type": "u16" },
+          { "name": "bump", "type": "u8" }
+        ]
+      }
+    },
+    {
+      "name": "UserPosition",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "owner", "type": "pubkey" },
+          { "name": "pool", "type": "pubkey" },
+          { "name": "lpTokens", "type": "u64" },
+          { "name": "depositTimestamp", "type": "i64" }
+        ]
+      }
+    },
+    {
+      "name": "SwapEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "amm", "type": "pubkey" },
+          { "name": "inputMint", "type": "pubkey" },
+          { "name": "inputAmount", "type": "u64" },
+          { "name": "outputMint", "type": "pubkey" },
+          { "name": "outputAmount", "type": "u64" },
+          { "name": "fee", "type": "u64" },
+          { "name": "timestamp", "type": "i64" }
+        ]
+      }
+    },
+    {
+      "name": "LiquidityEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "pool", "type": "pubkey" },
+          { "name": "provider", "type": "pubkey" },
+          { "name": "tokenAMint", "type": "pubkey" },
+          { "name": "tokenBMint", "type": "pubkey" },
+          { "name": "tokenAAmount", "type": "u64" },
+          { "name": "tokenBAmount", "type": "u64" },
+          { "name": "lpTokensMinted", "type": "u64" },
+          { "name": "action", "type": "u8" }
+        ]
+      }
+    }
+  ],
+  "errors": [
+    { "code": 6000, "name": "SlippageExceeded", "msg": "Slippage tolerance exceeded" },
+    { "code": 6001, "name": "InsufficientLiquidity", "msg": "Insufficient liquidity in pool" },
+    { "code": 6002, "name": "InvalidPool", "msg": "Invalid pool state" }
+  ]
+}

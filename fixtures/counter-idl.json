@@ -1,0 +1,74 @@
+{
+  "address": "Coun1111111111111111111111111111111111111111",
+  "metadata": {
+    "name": "counter",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Simple counter program for unit testing"
+  },
+  "instructions": [
+    {
+      "name": "initialize",
+      "discriminator": [175, 175, 109, 31, 13, 152, 155, 237],
+      "accounts": [
+        { "name": "counter", "writable": true, "signer": false },
+        { "name": "authority", "writable": true, "signer": true },
+        { "name": "systemProgram", "writable": false, "signer": false }
+      ],
+      "args": []
+    },
+    {
+      "name": "increment",
+      "discriminator": [11, 18, 104, 9, 104, 174, 59, 33],
+      "accounts": [
+        { "name": "counter", "writable": true, "signer": false },
+        { "name": "authority", "writable": false, "signer": true }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Counter",
+      "discriminator": [255, 176, 4, 245, 188, 253, 124, 25]
+    }
+  ],
+  "events": [
+    {
+      "name": "IncrementEvent",
+      "discriminator": [186, 114, 44, 218, 109, 16, 12, 157],
+      "fields": [
+        { "name": "oldValue", "type": "u64" },
+        { "name": "newValue", "type": "u64" },
+        { "name": "authority", "type": "pubkey" }
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "Counter",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "count", "type": "u64" },
+          { "name": "authority", "type": "pubkey" },
+          { "name": "bump", "type": "u8" }
+        ]
+      }
+    },
+    {
+      "name": "IncrementEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "oldValue", "type": "u64" },
+          { "name": "newValue", "type": "u64" },
+          { "name": "authority", "type": "pubkey" }
+        ]
+      }
+    }
+  ],
+  "errors": [
+    { "code": 6000, "name": "Unauthorized", "msg": "Signer is not the counter authority" }
+  ]
+}
