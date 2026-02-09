@@ -15,6 +15,7 @@ import {
   Webhook,
   Bot,
   FileJson,
+  Mail,
 } from 'lucide-react';
 
 /* ─── Animated Grid Background ─── */
@@ -201,7 +202,7 @@ function Hero() {
               <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
             </Link>
             <a
-              href="https://github.com/uho-dev"
+              href="https://github.com/zhivkoto/uho-indexing"
               target="_blank"
               rel="noopener"
               className="inline-flex items-center gap-2 text-uho-text-secondary font-medium px-7 py-3.5 rounded-full border border-uho-border hover:border-uho-border-emphasis hover:text-uho-text-primary transition-all"
@@ -443,14 +444,15 @@ function Footer() {
     <footer className="border-t border-uho-border py-10 px-6">
       <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-uho-text-tertiary">
         <div className="flex items-center gap-2.5">
-          <div className="w-6 h-6 rounded-md bg-gradient-to-br from-uho-accent to-uho-accent-dark flex items-center justify-center font-bold text-[10px] text-uho-base">
-            U
-          </div>
-          <span>© 2025 Uho. Open-source Solana indexing.</span>
+          <img src="/logo.svg" alt="Uho" className="w-6 h-6 rounded-md" />
+          <span>© 2026 Uho. Open-source Solana indexing.</span>
         </div>
         <div className="flex items-center gap-6">
-          <a href="https://github.com/uho-dev" className="hover:text-uho-text-secondary transition-colors flex items-center gap-1.5" target="_blank" rel="noopener">
+          <a href="https://github.com/zhivkoto/uho-indexing" className="hover:text-uho-text-secondary transition-colors flex items-center gap-1.5" target="_blank" rel="noopener">
             <Github className="w-4 h-4" /> GitHub
+          </a>
+          <a href="mailto:zhivko@limechain.tech" className="hover:text-uho-text-secondary transition-colors flex items-center gap-1.5" target="_blank" rel="noopener">
+            <Mail className="w-4 h-4" /> Contact
           </a>
         </div>
       </div>
