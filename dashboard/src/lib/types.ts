@@ -162,7 +162,7 @@ export interface BackfillStatus {
   eventsFound: number;
   eventsSkipped: number;
   error: string | null;
-  demoLimitation: string | null;
+  demoLimitation: { maxSlots: number; message: string } | null;
   startedAt: string | null;
   completedAt: string | null;
 }

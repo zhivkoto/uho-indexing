@@ -282,7 +282,7 @@ export default function ProgramDetailPage() {
             {program.backfill.demoLimitation && (
               <div className="mt-3 flex items-start gap-2.5 p-2.5 rounded-lg bg-[rgba(34,211,238,0.06)] border border-[rgba(34,211,238,0.12)]">
                 <Info className="w-3.5 h-3.5 text-[#22D3EE] mt-0.5 shrink-0" />
-                <span className="text-xs text-[#A0A0AB]">{program.backfill.demoLimitation}</span>
+                <span className="text-xs text-[#A0A0AB]">{program.backfill.demoLimitation.message}</span>
               </div>
             )}
 
