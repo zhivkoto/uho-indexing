@@ -333,6 +333,18 @@ export class BackfillManager {
 
     console.log(`[Backfill] Found ${allSignatures.length} signatures in range`);
 
+    if (allSignatures.length === 0) {
+      await this.updateJobStatus(config.jobId, {
+        status: 'completed',
+        progress: 1,
+        events_found: 0,
+        events_skipped: 0,
+        completed_at: new Date().toISOString(),
+      });
+      console.log(`[Backfill] Job ${config.jobId} completed: no signatures in range`);
+      return;
+    }
+
     // Process transactions
     for (let i = 0; i < allSignatures.length; i++) {
       // Check for cancellation
