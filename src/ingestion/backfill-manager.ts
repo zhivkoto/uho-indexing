@@ -626,66 +626,6 @@ export class BackfillManager {
   }
 
   // ===========================================================================
-  // Private — Deployment Detection
-  // ===========================================================================
-
-  /**
-   * Auto-detects the slot where a program was first deployed by walking back
-   * through getSignaturesForAddress to find the earliest transaction.
-   *
-   * **Limitation:** `getSignaturesForAddress` returns max 1000 signatures per call.
-   * We iterate up to 500 times (500K signatures). Programs with more historical
-   * transactions than this may not resolve to the true deployment slot. In that case,
-   * use the `startFromSlot` override when creating the program to specify the exact
-   * deployment slot manually.
-   */
-  private async detectDeploymentSlot(
-    programId: string,
-    rpcUrl: string
-  ): Promise<number> {
-    const MAX_ITERATIONS = 500;
-    const connection = new Connection(rpcUrl, 'confirmed');
-    const { PublicKey } = await import('@solana/web3.js');
-    const pubkey = new PublicKey(programId);
-
-    let earliestSlot = Infinity;
-    let before: string | undefined;
-
-    // Walk backwards through signatures to find the earliest one
-    for (let i = 0; i < MAX_ITERATIONS; i++) {
-      const sigs = await connection.getSignaturesForAddress(pubkey, {
-        limit: 1000,
-        before,
-      });
-
-      if (sigs.length === 0) break;
-
-      const lastSig = sigs[sigs.length - 1];
-      if (lastSig.slot < earliestSlot) {
-        earliestSlot = lastSig.slot;
-      }
-
-      before = lastSig.signature;
-
-      // If we got fewer than 1000, we've reached the beginning
-      if (sigs.length < 1000) break;
-
-      // Log progress for long-running detection
-      if (i > 0 && i % 50 === 0) {
-        console.log(`[Backfill] Deployment detection: ${(i + 1) * 1000} signatures scanned, earliest slot so far: ${earliestSlot}`);
-      }
-    }
-
-    if (earliestSlot === Infinity) {
-      // Fallback: use a recent slot (program might be very new)
-      const currentSlot = await connection.getSlot();
-      return Math.max(0, currentSlot - 100_000); // ~11 hours back
-    }
-
-    return earliestSlot;
-  }
-
-  // ===========================================================================
   // Private — DB Updates
   // ===========================================================================
 
