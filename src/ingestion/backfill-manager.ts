@@ -674,6 +674,11 @@ export class BackfillManager {
   // Private — DB Updates
   // ===========================================================================
 
+  private static readonly ALLOWED_JOB_COLUMNS = new Set([
+    'status', 'progress', 'start_slot', 'end_slot', 'current_slot',
+    'events_found', 'events_skipped', 'error', 'started_at', 'completed_at',
+  ]);
+
   private async updateJobStatus(
     jobId: string,
     updates: Record<string, unknown>
@@ -683,6 +688,9 @@ export class BackfillManager {
     let idx = 1;
 
     for (const [key, value] of Object.entries(updates)) {
+      if (!BackfillManager.ALLOWED_JOB_COLUMNS.has(key)) {
+        throw new Error(`Invalid backfill job column: ${key}`);
+      }
       setClauses.push(`${key} = $${idx++}`);
       values.push(value);
     }
