@@ -67,6 +67,7 @@ export interface BackfillStatus {
 export class BackfillManager {
   private pool: pg.Pool;
   private activeJobs = new Map<string, ChildProcess>();
+  private cancelledJobs = new Set<string>();
 
   constructor(pool: pg.Pool) {
     this.pool = pool;
@@ -262,6 +263,7 @@ export class BackfillManager {
    * Stops any running backfill for a program.
    */
   stopBackfill(jobId: string): void {
+    this.cancelledJobs.add(jobId);
     const proc = this.activeJobs.get(jobId);
     if (proc) {
       proc.kill('SIGTERM');
@@ -333,6 +335,13 @@ export class BackfillManager {
 
     // Process transactions
     for (let i = 0; i < allSignatures.length; i++) {
+      // Check for cancellation
+      if (this.cancelledJobs.has(config.jobId)) {
+        this.cancelledJobs.delete(config.jobId);
+        console.log(`[Backfill] Job ${config.jobId} cancelled by user`);
+        return;
+      }
+
       const sig = allSignatures[i];
       if (sig.err) continue;
 
