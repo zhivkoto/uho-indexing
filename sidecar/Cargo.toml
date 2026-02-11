@@ -1,0 +1,24 @@
+[package]
+name = "uho-backfill"
+version = "0.1.0"
+edition = "2021"
+description = "Uho historical backfill sidecar — streams Old Faithful archive via Jetstreamer, filters by program ID, emits NDJSON"
+
+[dependencies]
+jetstreamer = "=0.4.0"
+jetstreamer-firehose = "=0.4.0"
+jetstreamer-plugin = "=0.4.0"
+reqwest = { version = "0.12", features = ["stream"] }
+async-compression = { version = "0.4", features = ["tokio", "zstd"] }
+tokio = { version = "1", features = ["full"] }
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bs58 = "0.5"
+solana-sdk = "2"
+solana-transaction-status = "2"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true

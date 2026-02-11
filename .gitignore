@@ -1,3 +1,4 @@
+.DS_Store
 node_modules/
 dist/
 .uho/
@@ -8,3 +9,4 @@ idls/
 .env.local
 *.html
 *.pdf
+sidecar/target/

@@ -3,10 +3,10 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { ArrowLeft, Pause, Play, Trash2, Copy, Check, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Pause, Play, Trash2, Copy, Check, ExternalLink, Square, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { useState } from 'react';
-import { getProgram, pauseProgram, resumeProgram, archiveProgram, updateProgram } from '@/lib/api';
+import { getProgram, pauseProgram, resumeProgram, archiveProgram, updateProgram, retryBackfill, cancelBackfill } from '@/lib/api';
 import { PageContainer } from '@/components/layout/page-container';
 import { Card, StatCard } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,7 @@ import { Modal } from '@/components/ui/modal';
 import { Tabs } from '@/components/ui/tabs';
 import { ThroughputChart } from '@/components/dashboard/throughput-chart';
 import { truncateAddress, copyToClipboard, formatNumber, formatSlot, formatRelativeTime, solscanAddressUrl } from '@/lib/utils';
-import type { ProgramStatusValue } from '@/lib/types';
+import type { ProgramStatusValue, BackfillStatus } from '@/lib/types';
 
 const statusBadge: Record<ProgramStatusValue, { variant: 'success' | 'warning' | 'error' | 'default' | 'info'; pulse: boolean }> = {
   provisioning: { variant: 'warning', pulse: true },
@@ -57,6 +57,18 @@ export default function ProgramDetailPage() {
     mutationFn: () => archiveProgram(programId),
     onSuccess: () => { toast.success('Archived'); router.push('/programs'); },
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed'),
+  });
+
+  const retryBackfillMut = useMutation({
+    mutationFn: () => retryBackfill(programId),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['program', programId] }); toast.success('Backfill retry started'); },
+    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to retry backfill'),
+  });
+
+  const cancelBackfillMut = useMutation({
+    mutationFn: () => cancelBackfill(programId),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['program', programId] }); toast.success('Backfill cancelled'); },
+    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to cancel backfill'),
   });
 
   const toggleEventMut = useMutation({
@@ -169,6 +181,116 @@ export default function ProgramDetailPage() {
               <span className="text-red-400 text-sm font-medium">Error:</span>
               <span className="font-mono text-xs text-red-400">{program.state.error}</span>
             </div>
+          </Card>
+        )}
+
+        {/* Backfill Progress */}
+        {program.backfill && (
+          <Card className={
+            program.backfill.status === 'failed' ? 'border-red-500/20' :
+            program.backfill.status === 'running' ? 'border-[#22D3EE]/20' :
+            program.backfill.status === 'completed' ? 'border-emerald-500/20' :
+            program.backfill.status === 'cancelled' ? 'border-yellow-500/20' :
+            ''
+          }>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-[#EDEDEF]">Historical Backfill</span>
+                <Badge
+                  variant={
+                    program.backfill.status === 'completed' ? 'success' :
+                    program.backfill.status === 'running' ? 'accent' :
+                    program.backfill.status === 'failed' ? 'error' :
+                    program.backfill.status === 'cancelled' ? 'warning' :
+                    'default'
+                  }
+                  dot
+                  pulse={program.backfill.status === 'running'}
+                >
+                  {program.backfill.status}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-2">
+                {program.backfill.status === 'running' && (
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={() => cancelBackfillMut.mutate()}
+                    loading={cancelBackfillMut.isPending}
+                  >
+                    <Square className="w-3.5 h-3.5" /> Cancel
+                  </Button>
+                )}
+                {(program.backfill.status === 'failed' || program.backfill.status === 'cancelled') && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => retryBackfillMut.mutate()}
+                    loading={retryBackfillMut.isPending}
+                  >
+                    Retry Backfill
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* Progress bar */}
+            {(program.backfill.status === 'running' || program.backfill.status === 'completed') && (
+              <div className="mb-3">
+                <div className="flex items-center justify-between text-xs text-[#63637A] mb-1.5">
+                  <span>{Math.round(program.backfill.progress * 100)}%</span>
+                  <span>
+                    {program.backfill.currentSlot && program.backfill.endSlot
+                      ? `Slot ${formatNumber(program.backfill.currentSlot)} / ${formatNumber(program.backfill.endSlot)}`
+                      : ''}
+                  </span>
+                </div>
+                <div className="w-full h-2 bg-[#1E1E26] rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      program.backfill.status === 'completed' ? 'bg-emerald-500' : 'bg-[#22D3EE]'
+                    }`}
+                    style={{ width: `${Math.round(program.backfill.progress * 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div>
+                <span className="text-[#63637A] block">Events Found</span>
+                <span className="text-[#EDEDEF] font-mono">{formatNumber(program.backfill.eventsFound)}</span>
+              </div>
+              <div>
+                <span className="text-[#63637A] block">Events Skipped</span>
+                <span className="text-[#EDEDEF] font-mono">{formatNumber(program.backfill.eventsSkipped)}</span>
+              </div>
+              {program.backfill.startSlot && (
+                <div>
+                  <span className="text-[#63637A] block">Start Slot</span>
+                  <span className="text-[#EDEDEF] font-mono">{formatNumber(program.backfill.startSlot)}</span>
+                </div>
+              )}
+              {program.backfill.startedAt && (
+                <div>
+                  <span className="text-[#63637A] block">Started</span>
+                  <span className="text-[#EDEDEF]">{formatRelativeTime(program.backfill.startedAt)}</span>
+                </div>
+              )}
+            </div>
+
+            {program.backfill.demoLimitation && (
+              <div className="mt-3 flex items-start gap-2.5 p-2.5 rounded-lg bg-[rgba(34,211,238,0.06)] border border-[rgba(34,211,238,0.12)]">
+                <Info className="w-3.5 h-3.5 text-[#22D3EE] mt-0.5 shrink-0" />
+                <span className="text-xs text-[#A0A0AB]">{program.backfill.demoLimitation.message}</span>
+              </div>
+            )}
+
+            {program.backfill.error && (
+              <div className="mt-3 p-2 rounded-lg bg-red-500/10 border border-red-500/20">
+                <span className="font-mono text-xs text-red-400">{program.backfill.error}</span>
+              </div>
+            )}
           </Card>
         )}
 

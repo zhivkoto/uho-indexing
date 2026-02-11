@@ -216,6 +216,8 @@ export async function createProgram(input: {
   chain?: string;
   events?: Array<{ name: string; type: 'event' | 'instruction'; enabled: boolean }>;
   config?: { pollIntervalMs?: number; batchSize?: number; startSlot?: number };
+  includeHistoricalData?: boolean;
+  startFromSlot?: number;
 }): Promise<ProgramInfo> {
   return fetchApi('/api/v1/programs', {
     method: 'POST',
@@ -251,6 +253,20 @@ export async function pauseProgram(id: string): Promise<void> {
 
 export async function resumeProgram(id: string): Promise<void> {
   await fetchApi(`/api/v1/programs/${id}/resume`, { method: 'POST' });
+}
+
+export async function retryBackfill(programId: string): Promise<void> {
+  await fetchApi(`/api/v1/programs/${programId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ retryBackfill: true }),
+  });
+}
+
+export async function cancelBackfill(programId: string): Promise<void> {
+  await fetchApi(`/api/v1/programs/${programId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ cancelBackfill: true }),
+  });
 }
 
 export async function discoverIdl(
