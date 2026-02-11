@@ -106,15 +106,17 @@ Program Setup ──▶ Toggle Historical ──▶ Validate Slot Range
                                     ┌──────────┴──────────┐
                                     ▼                      ▼
                               Demo Mode               Production
-                           (RPC Poller)            (Rust Sidecar)
+                           (RPC Poller)          (Rust Sidecar on VPS)
                                     │                      │
                                     ▼                      ▼
                          getSignaturesForAddress    Old Faithful Archive
-                         getParsedTransaction       Jetstreamer Stream
+                         getParsedTransaction       Jetstreamer ──▶ NDJSON
+                                    │                      │
+                                    │               HTTP stream to backend
                                     │                      │
                                     └──────────┬──────────┘
                                                ▼
-                                    Decode via IDL ──▶ Same Postgres Tables
+                                    Decode via IDL ──▶ Batch INSERT ──▶ Postgres
 ```
 
 **Two execution modes:**
@@ -122,7 +124,7 @@ Program Setup ──▶ Toggle Historical ──▶ Validate Slot Range
 | Mode | Range | Method | Speed |
 |------|-------|--------|-------|
 | **Demo** (current) | Last ~10,000 slots (~67 min) | RPC polling via `getSignaturesForAddress` | ~100 tx/s |
-| **Production** (roadmap) | Full program history | Rust sidecar via [Jetstreamer](https://github.com/rpcpool/jetstreamer) + Old Faithful archive | ~10,000 tx/s |
+| **Production** (roadmap) | Full program history | Rust sidecar via [Jetstreamer](https://github.com/anza-xyz/jetstreamer) + Old Faithful archive | ~15–40K events/s |
 
 ### Demo Mode
 
@@ -135,7 +137,7 @@ The backfill runs in the background after program creation:
 
 ### Rust Sidecar (Production Path)
 
-For full archival backfill, Uho includes a Rust sidecar (`sidecar/`) built on Jetstreamer that streams directly from the Old Faithful Solana archive:
+For full archival backfill, Uho includes a Rust sidecar (`sidecar/`) built on [Jetstreamer](https://github.com/anza-xyz/jetstreamer) that streams from the Old Faithful Solana archive. In production, the sidecar runs as a standalone HTTP service on a dedicated VPS, streaming filtered NDJSON to the backend via authenticated HTTP.
 
 ```bash
 cd sidecar
@@ -148,9 +150,7 @@ cargo build --release
   --end-slot 398736999
 ```
 
-The sidecar outputs NDJSON to stdout — each line is a transaction with its log messages. The Node.js backend pipes this through the same IDL decoder and writes to Postgres.
-
-> **Note:** The sidecar currently compiles as a workspace member inside the [Jetstreamer](https://github.com/zhivkoto/jetstreamer) monorepo (branch `feat/uho-backfill`) due to an upstream dependency issue. See `sidecar/README.md` for build instructions.
+See [docs/BACKFILL_ARCHITECTURE.md](docs/BACKFILL_ARCHITECTURE.md) for the full production architecture and [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) for deployment configs.
 
 ## CLI Commands
 
