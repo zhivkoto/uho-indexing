@@ -94,6 +94,64 @@ ws.send(JSON.stringify({ subscribe: "pump_fun/create_event" }));
 - **Webhook triggers** — Push events to your agent's endpoint in real-time
 - **SKILL.md** — Agent onboarding file at [uhoindexing.com/skill.md](https://www.uhoindexing.com/skill.md)
 
+## Historical Backfill
+
+Uho supports backfilling historical on-chain data so you don't start from a blank slate. When setting up a new program, toggle **"Historical backfill"** in the data source step to fetch past events from the Solana archive.
+
+### How It Works
+
+```
+Program Setup ──▶ Toggle Historical ──▶ Validate Slot Range
+                                               │
+                                    ┌──────────┴──────────┐
+                                    ▼                      ▼
+                              Demo Mode               Production
+                           (RPC Poller)            (Rust Sidecar)
+                                    │                      │
+                                    ▼                      ▼
+                         getSignaturesForAddress    Old Faithful Archive
+                         getParsedTransaction       Jetstreamer Stream
+                                    │                      │
+                                    └──────────┬──────────┘
+                                               ▼
+                                    Decode via IDL ──▶ Same Postgres Tables
+```
+
+**Two execution modes:**
+
+| Mode | Range | Method | Speed |
+|------|-------|--------|-------|
+| **Demo** (current) | Last ~10,000 slots (~67 min) | RPC polling via `getSignaturesForAddress` | ~100 tx/s |
+| **Production** (roadmap) | Full program history | Rust sidecar via [Jetstreamer](https://github.com/rpcpool/jetstreamer) + Old Faithful archive | ~10,000 tx/s |
+
+### Demo Mode
+
+The hosted platform enforces a 10,000-slot demo limit on backfill. This covers roughly 67 minutes of chain history — enough to verify your indexing pipeline works end-to-end with real data.
+
+The backfill runs in the background after program creation:
+- **Progress tracking** — real-time progress bar with slot position and event counts
+- **Cancel/retry** — stop a running backfill or retry a failed one
+- **No data duplication** — backfilled events land in the same tables as live-indexed events
+
+### Rust Sidecar (Production Path)
+
+For full archival backfill, Uho includes a Rust sidecar (`sidecar/`) built on Jetstreamer that streams directly from the Old Faithful Solana archive:
+
+```bash
+cd sidecar
+cargo build --release
+
+# Backfill pump.fun events from slots 398736000 to 398736999
+./target/release/uho-backfill \
+  --program 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P \
+  --start-slot 398736000 \
+  --end-slot 398736999
+```
+
+The sidecar outputs NDJSON to stdout — each line is a transaction with its log messages. The Node.js backend pipes this through the same IDL decoder and writes to Postgres.
+
+> **Note:** The sidecar currently compiles as a workspace member inside the [Jetstreamer](https://github.com/zhivkoto/jetstreamer) monorepo (branch `feat/uho-backfill`) due to an upstream dependency issue. See `sidecar/README.md` for build instructions.
+
 ## CLI Commands
 
 | Command | Description |
