@@ -21,33 +21,6 @@ Backfill indexes a Solana program's full on-chain history using a **Rust sidecar
 - Pipeline: Sidecar → `EventDecoder.decodeLogMessages()` → `EventWriter.writeEvents()` → Postgres
 - Cancellation via in-memory `cancelledJobs` Set; auth check on job ownership
 
-**What's broken (22 findings from hostile review):**
-
-| # | Severity | Issue | Section |
-|---|----------|-------|---------|
-| 1 | Critical | `println!` from N threads interleaves lines >4KB | §4.1 |
-| 2 | Critical | No backpressure — raw stdout, no bounded channels | §4.1 |
-| 3 | Critical | Zombie jobs — in-memory `activeJobs` lost on restart | §4.2 |
-| 4 | Critical | No data integrity verification | §5.2 |
-| 5 | Critical | `program_id_bytes` panics on <32 byte input | §4.1 |
-| 6 | Critical | Doc describes systems that don't exist | This doc |
-| 7 | Critical | "200K TPS on Railway" was fiction | §1 |
-| 8 | Major | ALT addresses missed — v0 lookup tables ignored | §4.1 |
-| 9 | Major | 1 event = 1 DB round-trip — no batching | §4.2 |
-| 10 | Major | `createSchemaPool` — duck-typed PoolClient as Pool | §4.2 |
-| 11 | Major | Connection pool exhaustion (50 pending × 2 jobs) | §4.2 |
-| 12 | Major | Retry resumes from stale checkpoint, skips events | §5.1 |
-| 13 | Major | RPC cancellation doesn't update DB status | §4.2 |
-| 14 | Major | No graceful shutdown | §4.1, §4.2 |
-| 15 | Major | Multi-tenant dedup assumes identical slot ranges | §6 |
-| 16 | Major | No rate limiting on backfill API | §6 |
-| 17 | Major | No disk/memory circuit breaker | §4.1 |
-| 18 | Major | Sidecar has no authentication | §4.1 |
-| 19 | Major | IDL changes more common than assumed | §5.3 |
-| 20 | Minor | No observability / metrics | §7 |
-| 21 | Minor | `unsafe set_var` warnings | §4.1 |
-| 22 | Minor | Silent decode failures, no skip rate reporting | §5.3 |
-
 ---
 
 ## 3. Why Jetstreamer
