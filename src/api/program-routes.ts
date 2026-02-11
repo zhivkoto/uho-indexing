@@ -146,7 +146,7 @@ export function registerProgramRoutes(
       // Attach backfill status if available
       let backfill = null;
       if (backfillManager) {
-        backfill = await backfillManager.getJobByUserProgram(id);
+        backfill = await backfillManager.getJobByUserProgram(id, auth.userId);
       }
 
       return { ...program, backfill };
@@ -175,7 +175,7 @@ export function registerProgramRoutes(
     try {
       // Handle backfill cancellation
       if (body?.cancelBackfill && backfillManager) {
-        const existingJob = await backfillManager.getJobByUserProgram(id);
+        const existingJob = await backfillManager.getJobByUserProgram(id, auth.userId);
         if (existingJob && existingJob.status === 'running') {
           backfillManager.stopBackfill(existingJob.id);
           await backfillManager.updateJobStatusPublic(existingJob.id, {
@@ -188,7 +188,7 @@ export function registerProgramRoutes(
 
       // Handle backfill retry
       if (body?.retryBackfill && backfillManager) {
-        const existingJob = await backfillManager.getJobByUserProgram(id);
+        const existingJob = await backfillManager.getJobByUserProgram(id, auth.userId);
         if (existingJob && (existingJob.status === 'failed' || existingJob.status === 'cancelled')) {
           // Get program details for retry config
           const programDetail = await programService.getProgram(auth.userId, id);

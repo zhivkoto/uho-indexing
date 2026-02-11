@@ -203,13 +203,19 @@ export class BackfillManager {
   /**
    * Gets backfill job for a user program.
    */
-  async getJobByUserProgram(userProgramId: string): Promise<(BackfillStatus & { id: string }) | null> {
+  async getJobByUserProgram(userProgramId: string, userId?: string): Promise<(BackfillStatus & { id: string }) | null> {
+    const query = userId
+      ? `SELECT id, status, progress, start_slot, end_slot, current_slot,
+                events_found, events_skipped, error, started_at, completed_at
+         FROM backfill_jobs WHERE user_program_id = $1 AND user_id = $2
+         ORDER BY created_at DESC LIMIT 1`
+      : `SELECT id, status, progress, start_slot, end_slot, current_slot,
+                events_found, events_skipped, error, started_at, completed_at
+         FROM backfill_jobs WHERE user_program_id = $1
+         ORDER BY created_at DESC LIMIT 1`;
     const result = await this.pool.query(
-      `SELECT id, status, progress, start_slot, end_slot, current_slot,
-              events_found, events_skipped, error, started_at, completed_at
-       FROM backfill_jobs WHERE user_program_id = $1
-       ORDER BY created_at DESC LIMIT 1`,
-      [userProgramId]
+      query,
+      userId ? [userProgramId, userId] : [userProgramId]
     );
 
     if (result.rows.length === 0) return null;
