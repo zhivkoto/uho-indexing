@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS backfill_jobs (
     user_program_id UUID NOT NULL REFERENCES user_programs(id),
     program_id      TEXT NOT NULL,
     schema_name     TEXT NOT NULL,
-    status          TEXT NOT NULL DEFAULT 'pending',  -- pending, running, completed, failed
+    status          TEXT NOT NULL DEFAULT 'pending',  -- pending, running, completed, failed, cancelled
     progress        REAL DEFAULT 0,
     start_slot      BIGINT,
     end_slot        BIGINT,
