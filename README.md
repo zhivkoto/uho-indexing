@@ -106,15 +106,17 @@ Program Setup ──▶ Toggle Historical ──▶ Validate Slot Range
                                     ┌──────────┴──────────┐
                                     ▼                      ▼
                               Demo Mode               Production
-                           (RPC Poller)            (Rust Sidecar)
+                           (RPC Poller)          (Rust Sidecar on VPS)
                                     │                      │
                                     ▼                      ▼
                          getSignaturesForAddress    Old Faithful Archive
-                         getParsedTransaction       Jetstreamer Stream
+                         getParsedTransaction       Jetstreamer ──▶ NDJSON
+                                    │                      │
+                                    │               HTTP stream to backend
                                     │                      │
                                     └──────────┬──────────┘
                                                ▼
-                                    Decode via IDL ──▶ Same Postgres Tables
+                                    Decode via IDL ──▶ Batch INSERT ──▶ Postgres
 ```
 
 **Two execution modes:**
