@@ -143,7 +143,7 @@ export default function AddProgramPage() {
         idl: idl!,
         events: events.map((e) => ({ name: e.name, type: e.type, enabled: e.enabled })),
         includeHistoricalData,
-        startFromSlot: startFromSlot ? Number(startFromSlot) : undefined,
+        startFromSlot: startFromSlot && !isNaN(Number(startFromSlot)) ? Number(startFromSlot) : undefined,
       }),
     onSuccess: (result) => {
       toast.success('Program created! Indexing will start shortly.');
