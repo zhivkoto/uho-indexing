@@ -7,7 +7,7 @@
 
 ## 1. Overview
 
-Backfill indexes a Solana program's full on-chain history using a **Rust sidecar** (Jetstreamer + Old Faithful), deployed on a **dedicated Hetzner VPS**, streaming NDJSON over authenticated HTTP to the Node.js backend on Railway.
+Backfill indexes a Solana program's full on-chain history using a **Rust sidecar** (Jetstreamer + Old Faithful), deployed on a **dedicated Hetzner VPS**, streaming NDJSON over localhost to the co-located Node.js backend.
 
 **Realistic performance:** 15–40K events/sec on Hetzner CAX31 (8 ARM vCPU, 16 GB RAM). A program with 10M historical transactions completes in ~4–12 hours depending on match rate and decode complexity.
 
@@ -16,66 +16,60 @@ Backfill indexes a Solana program's full on-chain history using a **Rust sidecar
 ## System Diagram
 
 ```
-                            User clicks "Backfill"
-                                     │
-                                     ▼
-┌─ Railway ──────────────────────────────────────────────────────────────┐
-│                                                                        │
-│  ┌─────────────┐   1. Create job   ┌──────────────┐                  │
-│  │  Dashboard   │──────────────────▶│  Uho Backend  │                 │
-│  │  (Next.js)   │◀── progress poll ─│  (Node.js)    │                 │
-│  └─────────────┘                    │               │                  │
-│                                     │  ┌──────────┐ │                  │
-│                                     │  │ Job Queue │ │                  │
-│                                     │  │ Scheduler │ │                  │
-│                                     │  └─────┬────┘ │                  │
-│                                     │        │      │                  │
-│                                     │  2. POST /backfill (Bearer auth) │
-│                                     │        │      │                  │
-│                                     └────────┼──────┘                  │
-│                                              │                         │
-│  ┌───────────────────────────────────────────┼──────────────────────┐ │
-│  │ PostgreSQL                                │                       │ │
-│  │  ├─ backfill_jobs     (job state)         │                       │ │
-│  │  ├─ backfill_chunks   (checkpoints)       │                       │ │
-│  │  └─ user_schema_*     (event tables)  ◀───┼─── 5. Batch INSERT   │ │
-│  └───────────────────────────────────────────┼──────────────────────┘ │
-└──────────────────────────────────────────────┼────────────────────────┘
-                                               │
-                            HTTPS + Bearer token (UFW whitelist)
-                                               │
-┌─ Hetzner VPS (CAX31) ───────────────────────┼────────────────────────┐
-│                                               │                       │
-│  ┌────────────────────────────────────────────▼────────────────────┐  │
-│  │  Backfill Worker (Rust)                                         │  │
-│  │                                                                  │  │
-│  │  3. Jetstreamer streams from Old Faithful archive               │  │
-│  │     files.old-faithful.net ──▶ CAR epochs ──▶ parse txs         │  │
-│  │                                                                  │  │
-│  │  ┌─────────────────┐    bounded     ┌──────────────────┐       │  │
-│  │  │ StreamingPlugin  │───mpsc chan───▶│  Drain Task       │       │  │
-│  │  │ (N threads)      │   (8192 cap)  │  (single writer)  │       │  │
-│  │  │                  │               │                    │       │  │
-│  │  │ • Filter by      │  backpressure │  4. NDJSON stream  │       │  │
-│  │  │   program ID     │◀─────────────│     back to        │       │  │
-│  │  │   (+ ALT addrs)  │  channel full │     Railway        │──────┤  │
-│  │  └─────────────────┘               └──────────────────┘       │  │
-│  └────────────────────────────────────────────────────────────────┘  │
-│                                                                       │
-│  systemd managed · MemoryMax=12G · Restart=always                    │
-└───────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-                    files.old-faithful.net
-                    (Solana CAR archive CDN)
+                         Internet
+                            │
+                     DNS: uhoindexing.com
+                   api.  → backend:4000
+                   www.  → dashboard:3000
+                            │
+┌─ Hetzner CAX31 (8 ARM vCPU, 16 GB RAM, 160 GB NVMe) ─────────────────┐
+│                           │                                             │
+│  ┌────────── Caddy (reverse proxy, auto-TLS) ──────────┐              │
+│  │  :443 → api.uhoindexing.com  → localhost:4000       │              │
+│  │  :443 → uhoindexing.com      → localhost:3000       │              │
+│  └──────────────────────────────────────────────────────┘              │
+│           │                              │                              │
+│  ┌────────▼─────────┐    ┌──────────────▼──────────┐                  │
+│  │  Uho Backend      │    │  Dashboard (Next.js)    │                  │
+│  │  (Node.js/Fastify) │    │  standalone on :3000    │                  │
+│  │  :4000             │    └─────────────────────────┘                  │
+│  │                    │                                                 │
+│  │  ┌──────────┐     │    localhost (no network hop)                   │
+│  │  │ Job Queue │     │◀═══════════ NDJSON pipe ═══════════╗           │
+│  │  │ Scheduler │     │                                     ║           │
+│  │  └─────┬────┘     │                                     ║           │
+│  │        │          │                                     ║           │
+│  │   Batch INSERT    │                                     ║           │
+│  │        │          │                                     ║           │
+│  └────────┼──────────┘                                     ║           │
+│           │                                                ║           │
+│  ┌────────▼──────────────────────────────┐   ┌─────────────╩────────┐ │
+│  │ PostgreSQL 16                          │   │ Backfill Sidecar     │ │
+│  │ :5432 (listen localhost only)          │   │ (Rust/Axum on :3001) │ │
+│  │                                        │   │                      │ │
+│  │ ├─ backfill_jobs                       │   │ Jetstreamer streams  │ │
+│  │ ├─ backfill_chunks                     │   │ from Old Faithful    │ │
+│  │ └─ user_schema_*                       │   │ → filter → NDJSON   │ │
+│  │                                        │   │                      │ │
+│  │ WAL → /backup/wal (pg_basebackup)     │   │ systemd MemoryMax=10G│ │
+│  └────────────────────────────────────────┘   └──────────────────────┘ │
+│                                                         │               │
+│  Docker Compose manages: postgres, backend, dashboard   │               │
+│  systemd manages: sidecar (native binary, needs CPU)    │               │
+│  Caddy runs as system service (auto-TLS via Let's Encrypt)             │
+└─────────────────────────────────────────────────────────────────────────┘
+                                                          │
+                                                          ▼
+                                                files.old-faithful.net
+                                                (Solana CAR archive CDN)
 ```
 
 **Data flow summary:**
 1. User triggers backfill → backend creates job in Postgres
-2. Backend POSTs to sidecar with program ID + slot range
+2. Backend calls sidecar on `localhost:3001` (no network hop, no TLS overhead)
 3. Sidecar runs Jetstreamer, filters matching txs through bounded channel
-4. Single drain task streams NDJSON back to backend (no interleaving)
-5. Backend decodes events via IDL → batch INSERTs into user's Postgres schema
+4. Single drain task streams NDJSON back to backend over localhost
+5. Backend decodes events via IDL → batch INSERTs into co-located Postgres
 6. Dashboard polls for progress updates
 
 ---
@@ -334,23 +328,324 @@ Phase 3: Prometheus `/metrics` endpoint on sidecar, Grafana dashboard.
 
 ## 8. Deployment
 
-| Component | Platform | Specs | Cost |
-|-----------|----------|-------|------|
-| Backend + Dashboard | Railway | Standard | ~$10/mo |
-| PostgreSQL | Railway | Managed | ~$10–25/mo |
-| **Backfill sidecar** | **Hetzner CAX31** | 8 ARM vCPU, 16 GB RAM, 1 Gbps | **€13/mo** |
+> **Strategy:** Single Hetzner VPS running everything. Co-location eliminates network hops between
+> backend ↔ sidecar ↔ Postgres. Upgrade path to multi-node when needed.
 
-**Sidecar systemd unit:**
+### 8.1 Infrastructure
+
+| Component | Runtime | Port | Management |
+|-----------|---------|------|------------|
+| **Caddy** | System package | :80, :443 | systemd |
+| **Backend** (Fastify) | Docker | :4000 | Docker Compose |
+| **Dashboard** (Next.js) | Docker | :3000 | Docker Compose |
+| **PostgreSQL 16** | Docker | :5432 (localhost) | Docker Compose |
+| **Backfill sidecar** | Native binary | :3001 (localhost) | systemd |
+
+**Server:** Hetzner CAX31 — 8 ARM vCPU, 16 GB RAM, 160 GB NVMe, 1 Gbps — **€13.20/mo**
+
+**Why this split:**
+- Sidecar runs as native binary via systemd (not Docker) — needs raw CPU, direct memory control via `MemoryMax`, and avoids Docker overhead for a CPU-bound Rust process
+- Backend + Dashboard + Postgres in Docker Compose — standard, reproducible, easy rollback
+- Caddy as system service — manages TLS certificates automatically, routes to Docker ports
+
+### 8.2 Docker Compose
+
+```yaml
+# /opt/uho/docker-compose.yml
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_USER: uho
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: uho
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./pg-conf/postgresql.conf:/etc/postgresql/postgresql.conf
+      - ./backups:/backups
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    shm_size: 256mb
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+  backend:
+    image: ghcr.io/OWNER/uho-backend:${TAG:-latest}
+    restart: always
+    ports:
+      - "127.0.0.1:4000:4000"
+    environment:
+      DATABASE_URL: postgresql://uho:${POSTGRES_PASSWORD}@postgres:5432/uho
+      BACKFILL_SIDECAR_URL: http://host.docker.internal:3001
+      BACKFILL_SECRET: ${BACKFILL_SECRET}
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  dashboard:
+    image: ghcr.io/OWNER/uho-dashboard:${TAG:-latest}
+    restart: always
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: https://api.uhoindexing.com
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+volumes:
+  pg_data:
+```
+
+### 8.3 PostgreSQL Tuning (backfill-optimized)
+
 ```ini
+# /opt/uho/pg-conf/postgresql.conf
+shared_buffers = 2GB
+effective_cache_size = 6GB
+work_mem = 64MB
+maintenance_work_mem = 512MB
+wal_buffers = 64MB
+
+# Write-heavy tuning for backfill
+checkpoint_completion_target = 0.9
+max_wal_size = 4GB
+min_wal_size = 1GB
+wal_level = replica              # needed for PITR
+archive_mode = on
+archive_command = 'cp %p /backups/wal/%f'
+
+# Connection limits (no pooler needed at this scale)
+max_connections = 50
+
+# Logging
+log_min_duration_statement = 1000
+log_checkpoints = on
+```
+
+### 8.4 Caddy (Reverse Proxy + Auto-TLS)
+
+```
+# /etc/caddy/Caddyfile
+
+api.uhoindexing.com {
+    reverse_proxy localhost:4000
+    encode gzip
+}
+
+uhoindexing.com {
+    reverse_proxy localhost:3000
+    encode gzip
+}
+
+# Health check endpoint (no TLS)
+:8080 {
+    respond /health 200
+}
+```
+
+Install: `sudo apt install caddy` — auto-renews TLS via Let's Encrypt, zero config.
+
+### 8.5 Sidecar systemd Unit
+
+```ini
+# /etc/systemd/system/uho-sidecar.service
+[Unit]
+Description=Uho Backfill Sidecar
+After=network.target
+
 [Service]
-ExecStart=/opt/uho-backfill/target/release/uho-backfill serve --port 3001
+Type=simple
+ExecStart=/opt/uho-sidecar/uho-backfill serve --port 3001
 Environment=BACKFILL_SECRET=<secret>
 Environment=RUST_LOG=info,jetstreamer=warn
 Restart=always
-MemoryMax=12G
+RestartSec=5
+MemoryMax=10G
+MemoryHigh=8G
+User=uho
+WorkingDirectory=/opt/uho-sidecar
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-**Network:** UFW allow only Railway egress IPs on port 3001. All traffic HTTPS + Bearer token. SSH key-only.
+### 8.6 Firewall (UFW)
+
+```bash
+sudo ufw default deny incoming
+sudo ufw allow ssh
+sudo ufw allow 80/tcp    # Caddy HTTP (redirect → HTTPS)
+sudo ufw allow 443/tcp   # Caddy HTTPS
+# Ports 3000, 3001, 4000, 5432 are localhost-only — not exposed
+sudo ufw enable
+```
+
+### 8.7 CI/CD (GitHub Actions → Zero-Downtime Deploy)
+
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build & push backend image
+        run: |
+          echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          docker build -t ghcr.io/OWNER/uho-backend:${{ github.sha }} -f backend/Dockerfile backend/
+          docker push ghcr.io/OWNER/uho-backend:${{ github.sha }}
+
+      - name: Build & push dashboard image
+        run: |
+          docker build -t ghcr.io/OWNER/uho-dashboard:${{ github.sha }} -f dashboard/Dockerfile dashboard/
+          docker push ghcr.io/OWNER/uho-dashboard:${{ github.sha }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: deploy
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /opt/uho
+            export TAG=${{ github.sha }}
+            docker compose pull backend dashboard
+            docker compose up -d --no-deps backend    # rolling: backend first
+            sleep 5
+            curl -sf http://localhost:4000/health || exit 1
+            docker compose up -d --no-deps dashboard
+            docker image prune -f
+```
+
+**Sidecar deploy** (less frequent, manual or separate workflow):
+```bash
+# On VPS or via SSH action
+cd /opt/uho-sidecar
+curl -L -o uho-backfill-new https://github.com/OWNER/uho-sidecar/releases/download/$TAG/uho-backfill-aarch64
+chmod +x uho-backfill-new
+# Wait for active jobs to drain, then:
+sudo systemctl stop uho-sidecar
+mv uho-backfill-new uho-backfill
+sudo systemctl start uho-sidecar
+```
+
+### 8.8 Backup Strategy
+
+**Daily base backup** (cron, 03:00 UTC):
+```bash
+# /etc/cron.d/uho-backup
+0 3 * * * uho docker exec uho-postgres-1 pg_basebackup -D /backups/base-$(date +\%Y\%m\%d) -Ft -z -P
+```
+
+**WAL archiving:** Continuous via `archive_command` (see §8.3). WAL files copied to `/backups/wal/`.
+
+**Offsite:** Sync `/backups/` to Hetzner Storage Box (BX11, €3.81/mo for 1 TB) via borgbackup:
+```bash
+# Weekly borg backup
+0 4 * * 0 borg create ssh://u123456@u123456.your-storagebox.de:23/./uho::weekly-{now} /backups/
+```
+
+**Recovery:** PITR to any point using base backup + WAL replay.
+
+### 8.9 Monitoring (Minimal Viable)
+
+| What | How | Cost |
+|------|-----|------|
+| **Uptime** | UptimeRobot (free, 5-min checks on api + www) | $0 |
+| **Server metrics** | `htop` + Hetzner Cloud console (CPU, disk, bandwidth) | $0 |
+| **App health** | Backend `/health` → returns DB status, active jobs, memory | $0 |
+| **Sidecar health** | `/health` → active jobs, RSS, uptime | $0 |
+| **Alerts** | UptimeRobot → Telegram webhook on downtime | $0 |
+| **Logs** | `docker compose logs -f` + `journalctl -u uho-sidecar -f` | $0 |
+| **Postgres** | `pg_stat_statements` + log slow queries (>1s) | $0 |
+
+**Phase 3 upgrade:** Add Prometheus node_exporter + Grafana on same box (or Grafana Cloud free tier: 10K metrics).
+
+### 8.10 Scaling Path
+
+**Current ceiling:** CAX31 handles ~15-40K events/sec indexing + API traffic comfortably. Likely sufficient for 50+ programs and moderate API load.
+
+**When to scale:**
+| Signal | Action |
+|--------|--------|
+| CPU sustained >80% during backfill + API | Upgrade to CAX41 (16 vCPU, 32 GB — €25/mo) |
+| Postgres disk >120 GB | Attach Hetzner Volume (€4.80/100GB/mo) |
+| API latency >200ms p95 | Split: move backend+dashboard to separate CAX21 (€7/mo), keep sidecar+PG on CAX31 |
+| >5 concurrent backfills needed | Dedicated sidecar on second CAX31, connect to PG via private network |
+| Need HA / zero-downtime DB | Migrate PG to managed (Neon free tier, or Supabase, or Hetzner managed DB at €19/mo) |
+
+**Private networking:** Hetzner vSwitch / private network (free) connects VPSes at 10 Gbps. Split architecture when single-box ceiling is hit.
+
+### 8.11 Cost Summary
+
+| Item | Monthly |
+|------|---------|
+| Hetzner CAX31 | €13.20 |
+| Hetzner Storage Box BX11 (backups) | €3.81 |
+| Domain (uhoindexing.com) | ~€1 (amortized) |
+| **Total** | **~€18/mo** |
+
+Compared to Railway (~$20-35/mo for equivalent resources, less CPU, shared infra).
+
+### 8.12 Initial Server Setup Checklist
+
+```bash
+# 1. Create CAX31 on Hetzner Cloud (Falkenstein DC, Ubuntu 24.04)
+# 2. SSH in, harden
+apt update && apt upgrade -y
+adduser deploy && usermod -aG sudo,docker deploy
+# Disable root SSH, password auth in /etc/ssh/sshd_config
+
+# 3. Install Docker
+curl -fsSL https://get.docker.com | sh
+
+# 4. Install Caddy
+apt install -y debian-keyring debian-archive-keyring apt-transport-https
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+apt update && apt install caddy
+
+# 5. Create uho user for sidecar
+useradd -r -s /bin/false uho
+
+# 6. Deploy
+mkdir -p /opt/uho /opt/uho-sidecar /backups/wal /backups/base
+cd /opt/uho
+# Copy docker-compose.yml, .env, pg-conf/
+docker compose up -d
+
+# 7. DNS
+# A record: uhoindexing.com → VPS_IP
+# A record: api.uhoindexing.com → VPS_IP
+# Caddy auto-provisions TLS on first request
+```
 
 ---
 
@@ -358,8 +653,8 @@ MemoryMax=12G
 
 | Decision | Chosen | Rejected | Why |
 |----------|--------|----------|-----|
-| Sidecar hosting | Hetzner CAX31 | Railway | Dedicated CPU/bandwidth; Railway shared resources give ~5x worse throughput |
-| Sidecar ↔ backend | HTTP NDJSON stream | Subprocess stdio | HTTP works across machines; subprocess ties them to same host |
+| Sidecar hosting | Hetzner CAX31 (co-located) | Railway / separate VPS | Co-location eliminates network hop for NDJSON + Postgres; single box simplifies ops |
+| Sidecar ↔ backend | HTTP NDJSON over localhost | Subprocess stdio / cross-network HTTP | Localhost = no TLS overhead, no network hop; HTTP allows independent process lifecycle |
 | Thread-safe output | Bounded mpsc channel + drain task | Mutex on stdout | Channel provides backpressure; mutex doesn't |
 | Multi-tenant dedup | Separate streams per user | Shared stream + fan-out | Simpler, fewer failure modes; bandwidth is free |
 | Batch writes | Multi-row INSERT (200/batch) | Individual inserts | 200x fewer round-trips; ~28h → ~8min for 1M events |
@@ -376,7 +671,7 @@ MemoryMax=12G
 
 1. Sidecar: input validation, bounded channel, drain task, ALT support
 2. Sidecar: Axum HTTP server with Bearer auth + `/health`
-3. Deploy on Hetzner CAX31 with systemd
+3. Deploy on Hetzner CAX31 (systemd for sidecar, Docker Compose for backend+dashboard+PG)
 4. Backend: HTTP stream consumer (replace subprocess), `BatchWriter` with multi-row INSERT
 5. Backend: zombie job recovery on startup, cancellation updates DB status
 6. Remove `DEMO_BACKFILL_SLOT_LIMIT`, add decode skip rate tracking
