@@ -13,6 +13,73 @@ Backfill indexes a Solana program's full on-chain history using a **Rust sidecar
 
 ---
 
+## System Diagram
+
+```
+                            User clicks "Backfill"
+                                     │
+                                     ▼
+┌─ Railway ──────────────────────────────────────────────────────────────┐
+│                                                                        │
+│  ┌─────────────┐   1. Create job   ┌──────────────┐                  │
+│  │  Dashboard   │──────────────────▶│  Uho Backend  │                 │
+│  │  (Next.js)   │◀── progress poll ─│  (Node.js)    │                 │
+│  └─────────────┘                    │               │                  │
+│                                     │  ┌──────────┐ │                  │
+│                                     │  │ Job Queue │ │                  │
+│                                     │  │ Scheduler │ │                  │
+│                                     │  └─────┬────┘ │                  │
+│                                     │        │      │                  │
+│                                     │  2. POST /backfill (Bearer auth) │
+│                                     │        │      │                  │
+│                                     └────────┼──────┘                  │
+│                                              │                         │
+│  ┌───────────────────────────────────────────┼──────────────────────┐ │
+│  │ PostgreSQL                                │                       │ │
+│  │  ├─ backfill_jobs     (job state)         │                       │ │
+│  │  ├─ backfill_chunks   (checkpoints)       │                       │ │
+│  │  └─ user_schema_*     (event tables)  ◀───┼─── 5. Batch INSERT   │ │
+│  └───────────────────────────────────────────┼──────────────────────┘ │
+└──────────────────────────────────────────────┼────────────────────────┘
+                                               │
+                            HTTPS + Bearer token (UFW whitelist)
+                                               │
+┌─ Hetzner VPS (CAX31) ───────────────────────┼────────────────────────┐
+│                                               │                       │
+│  ┌────────────────────────────────────────────▼────────────────────┐  │
+│  │  Backfill Worker (Rust)                                         │  │
+│  │                                                                  │  │
+│  │  3. Jetstreamer streams from Old Faithful archive               │  │
+│  │     files.old-faithful.net ──▶ CAR epochs ──▶ parse txs         │  │
+│  │                                                                  │  │
+│  │  ┌─────────────────┐    bounded     ┌──────────────────┐       │  │
+│  │  │ StreamingPlugin  │───mpsc chan───▶│  Drain Task       │       │  │
+│  │  │ (N threads)      │   (8192 cap)  │  (single writer)  │       │  │
+│  │  │                  │               │                    │       │  │
+│  │  │ • Filter by      │  backpressure │  4. NDJSON stream  │       │  │
+│  │  │   program ID     │◀─────────────│     back to        │       │  │
+│  │  │   (+ ALT addrs)  │  channel full │     Railway        │──────┤  │
+│  │  └─────────────────┘               └──────────────────┘       │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+│                                                                       │
+│  systemd managed · MemoryMax=12G · Restart=always                    │
+└───────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+                    files.old-faithful.net
+                    (Solana CAR archive CDN)
+```
+
+**Data flow summary:**
+1. User triggers backfill → backend creates job in Postgres
+2. Backend POSTs to sidecar with program ID + slot range
+3. Sidecar runs Jetstreamer, filters matching txs through bounded channel
+4. Single drain task streams NDJSON back to backend (no interleaving)
+5. Backend decodes events via IDL → batch INSERTs into user's Postgres schema
+6. Dashboard polls for progress updates
+
+---
+
 ## 2. Current State `[EXISTS]`
 
 **What works:**
@@ -46,7 +113,7 @@ Backfill indexes a Solana program's full on-chain history using a **Rust sidecar
 
 Axum HTTP server on the VPS. One endpoint streams NDJSON per job.
 
-**Thread-safe output** (fixes #1, #2): Dedicated writer task drains a bounded channel.
+**Thread-safe output**: Dedicated writer task drains a bounded channel.
 
 ```rust
 use tokio::sync::mpsc;
@@ -86,7 +153,7 @@ async fn drain(mut rx: mpsc::Receiver<String>, mut writer: impl AsyncWrite + Unp
 }
 ```
 
-**ALT support** (fixes #8):
+**ALT support**:
 ```rust
 fn matches_program(&self, tx: &TransactionData) -> bool {
     let keys = tx.transaction.message.static_account_keys();
@@ -99,7 +166,7 @@ fn matches_program(&self, tx: &TransactionData) -> bool {
 }
 ```
 
-**Input validation** (fixes #5):
+**Input validation**:
 ```rust
 fn parse_program_id(s: &str) -> Result<[u8; 32]> {
     let bytes = bs58::decode(s).into_vec().context("Invalid base58")?;
@@ -107,13 +174,13 @@ fn parse_program_id(s: &str) -> Result<[u8; 32]> {
 }
 ```
 
-**Authentication** (fixes #18): Shared secret via `Authorization: Bearer <secret>`. Reject all unauthenticated requests.
+**Authentication**: Shared secret via `Authorization: Bearer <secret>`. Reject all unauthenticated requests.
 
-**Circuit breaker** (fixes #17): Monitor RSS via `/proc/self/status`. If >80% of `MemoryMax`, stop accepting new jobs. Existing jobs continue to drain.
+**Circuit breaker**: Monitor RSS via `/proc/self/status`. If >80% of `MemoryMax`, stop accepting new jobs. Existing jobs continue to drain.
 
-**Graceful shutdown** (fixes #14): SIGTERM → set shutdown flag → stop Jetstreamer iteration → flush channel → respond with final stats → exit.
+**Graceful shutdown**: SIGTERM → set shutdown flag → stop Jetstreamer iteration → flush channel → respond with final stats → exit.
 
-**No unsafe set_var** (fixes #21): Pass config via `JetstreamerRunner` builder API or env vars set *before* runtime init (current approach is fine since it's before `tokio::runtime::Builder`, but use `std::env::set_var` without unsafe block on Rust <1.83, or pass via builder if Jetstreamer supports it).
+**No unsafe set_var**: Pass config via `JetstreamerRunner` builder API or env vars set *before* runtime init (current approach is fine since it's before `tokio::runtime::Builder`, but use `std::env::set_var` without unsafe block on Rust <1.83, or pass via builder if Jetstreamer supports it).
 
 **HTTP API:**
 ```
@@ -131,7 +198,7 @@ DELETE /backfill/:id → { cancelled: true }
 
 Consumes sidecar HTTP stream. Replaces subprocess spawning with `fetch()`.
 
-**Zombie recovery on startup** (fixes #3):
+**Zombie recovery on startup**:
 ```typescript
 // Run on every backend boot
 await pool.query(`
@@ -140,7 +207,7 @@ await pool.query(`
 `);
 ```
 
-**Batch writes** (fixes #9, #10, #11):
+**Batch writes**:
 ```typescript
 // Replace createSchemaPool hack — pass client directly
 class BatchWriter {
@@ -182,7 +249,7 @@ const JOB_SEMAPHORE = new Semaphore(2);     // max concurrent jobs
 const WRITE_SEMAPHORE = new Semaphore(4);    // max concurrent writes per job
 ```
 
-**Cancellation fixes** (fixes #13): `stopBackfill()` must update DB status:
+**Cancellation fixes**: `stopBackfill()` must update DB status:
 ```typescript
 async stopBackfill(jobId: string) {
   this.cancelledJobs.add(jobId);
@@ -192,9 +259,9 @@ async stopBackfill(jobId: string) {
 }
 ```
 
-**Graceful shutdown** (fixes #14): On SIGTERM, cancel all active HTTP streams, flush pending batches, update all running jobs to `failed`.
+**Graceful shutdown**: On SIGTERM, cancel all active HTTP streams, flush pending batches, update all running jobs to `failed`.
 
-**Rate limiting** (fixes #16): Max 1 backfill start per user per 5 minutes. Enforced in API middleware.
+**Rate limiting**: Max 1 backfill start per user per 5 minutes. Enforced in API middleware.
 
 **Failure modes:**
 - Backend restart mid-stream → zombie recovery on next boot → user retries
@@ -220,11 +287,11 @@ CREATE TABLE backfill_chunks (
 );
 ```
 
-**Resume with overlap** (fixes #12): On retry, restart incomplete chunks from `chunk_start - 1000` slots. `ON CONFLICT DO NOTHING` deduplicates the overlap. No events skipped.
+**Resume with overlap**: On retry, restart incomplete chunks from `chunk_start - 1000` slots. `ON CONFLICT DO NOTHING` deduplicates the overlap. No events skipped.
 
 ### 5.2 Integrity Verification `[PLANNED]`
 
-Post-backfill sampling (fixes #4): Pick 50 random tx signatures from backfilled data, re-fetch from RPC, decode independently, compare stored vs fresh. Report mismatch count.
+Post-backfill sampling: Pick 50 random tx signatures from backfilled data, re-fetch from RPC, decode independently, compare stored vs fresh. Report mismatch count.
 
 ```typescript
 async verify(jobId: string, sampleSize = 50): Promise<{ verified: number; mismatches: number }> {
@@ -238,7 +305,7 @@ async verify(jobId: string, sampleSize = 50): Promise<{ verified: number; mismat
 
 ### 5.3 IDL Versioning `[PLANNED]`
 
-**Skip rate tracking** (fixes #19, #22): Count decode failures per job. If >5%, surface warning: "Your program's IDL may have changed during the backfilled period."
+**Skip rate tracking**: Count decode failures per job. If >5%, surface warning: "Your program's IDL may have changed during the backfilled period."
 
 **Phase 2:** Multi-IDL decoder — user provides IDL versions with slot ranges. Decoder picks the right version per transaction slot.
 
@@ -246,17 +313,17 @@ async verify(jobId: string, sampleSize = 50): Promise<{ verified: number; mismat
 
 ## 6. Multi-Tenancy `[PLANNED]`
 
-**Dedup** (fixes #15): Do NOT merge overlapping ranges across users. Each user gets their own sidecar stream. Simpler, avoids fan-out complexity. At current scale (< 10 concurrent backfills), duplicate sidecar work is cheaper than coordination bugs.
+**Dedup**: Do NOT merge overlapping ranges across users. Each user gets their own sidecar stream. Simpler, avoids fan-out complexity. At current scale (< 10 concurrent backfills), duplicate sidecar work is cheaper than coordination bugs.
 
 **Decision:** Rejected shared streams because (a) slot ranges rarely overlap exactly, (b) fan-out writer adds complexity and failure modes, (c) Old Faithful bandwidth is free.
 
-**Rate limiting** (fixes #16): 1 backfill start per user per 5 min. Max 2 concurrent jobs globally.
+**Rate limiting**: 1 backfill start per user per 5 min. Max 2 concurrent jobs globally.
 
 ---
 
 ## 7. Observability `[PLANNED]`
 
-Ship with Phase 1 (fixes #20):
+Ship with Phase 1:
 - **Per-checkpoint log:** `{ jobId, eventsWritten, eventsSkipped, skipRate, elapsed, currentSlot }`
 - **Sidecar `/health`:** active jobs, memory RSS, uptime
 - **Decode skip rate** per job — warn at >5%, halt at >25%
@@ -304,32 +371,29 @@ MemoryMax=12G
 
 ## 10. Implementation Plan
 
-### Phase 1: Working Full Backfill (1–2 weeks)
+### Phase 1: Core Backfill (3–5 days)
 **No dependencies on later phases.**
 
 1. Sidecar: input validation, bounded channel, drain task, ALT support
 2. Sidecar: Axum HTTP server with Bearer auth + `/health`
 3. Deploy on Hetzner CAX31 with systemd
 4. Backend: HTTP stream consumer (replace subprocess), `BatchWriter` with multi-row INSERT
-5. Backend: zombie job recovery on startup
-6. Backend: cancellation updates DB status
-7. Remove `DEMO_BACKFILL_SLOT_LIMIT`
-8. Decode skip rate tracking + user warning
+5. Backend: zombie job recovery on startup, cancellation updates DB status
+6. Remove `DEMO_BACKFILL_SLOT_LIMIT`, add decode skip rate tracking
 
-### Phase 2: Reliability (1–2 weeks)
+### Phase 2: Reliability & Safety (3–5 days)
 **Depends on Phase 1.**
 
-9. Chunk-based checkpointing with resume + overlap buffer
-10. Connection pool semaphore
-11. Graceful shutdown (both sidecar and backend)
-12. Post-backfill integrity verification
-13. Memory circuit breaker on sidecar
-14. Rate limiting on backfill API (1 per user per 5 min)
+7. Chunk-based checkpointing with resume + overlap buffer
+8. Connection pool semaphore + graceful shutdown (both services)
+9. Post-backfill integrity verification
+10. Memory circuit breaker on sidecar
+11. Rate limiting (1 backfill per user per 5 min)
 
-### Phase 3: Scale & Observability (1–2 weeks)
+### Phase 3: Scale & Polish (3–5 days)
 **Depends on Phase 2.**
 
-15. Prometheus metrics on sidecar
-16. Multi-IDL decoder with slot ranges
-17. Per-user job limits + priority queue
-18. Incremental backfill (bridge historical → live)
+12. Prometheus metrics + Grafana dashboard
+13. Multi-IDL decoder with slot ranges
+14. Per-user job limits + priority queue
+15. Incremental backfill (bridge historical → live)
