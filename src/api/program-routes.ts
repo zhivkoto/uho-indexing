@@ -8,6 +8,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { ProgramService } from '../services/program-service.js';
 import type { IdlDiscoveryService } from '../services/idl-discovery.js';
+import { type BackfillManager, DEMO_BACKFILL_SLOT_LIMIT } from '../ingestion/backfill-manager.js';
 import { authMiddleware, jwtOnlyMiddleware } from '../middleware/auth.js';
 import { AppError } from '../core/errors.js';
 
@@ -21,7 +22,8 @@ import { AppError } from '../core/errors.js';
 export function registerProgramRoutes(
   app: FastifyInstance,
   programService: ProgramService,
-  idlDiscoveryService: IdlDiscoveryService | null
+  idlDiscoveryService: IdlDiscoveryService | null,
+  backfillManager?: BackfillManager | null
 ): void {
   // -----------------------------------------------------------------------
   // GET /api/v1/programs — List user's programs
@@ -47,6 +49,8 @@ export function registerProgramRoutes(
       chain?: string;
       events?: Array<{ name: string; type: 'event' | 'instruction'; enabled: boolean }>;
       config?: { pollIntervalMs?: number; batchSize?: number; startSlot?: number };
+      includeHistoricalData?: boolean;
+      startFromSlot?: number;
     } | null;
 
     if (!body?.programId || !body?.idl) {
@@ -64,12 +68,62 @@ export function registerProgramRoutes(
         events: body.events,
         config: body.config,
       });
+      // Start backfill if requested
+      let backfillJobId: string | undefined;
+      if (body.includeHistoricalData && backfillManager) {
+        try {
+          const jobId = await backfillManager.createJob({
+            userId: auth.userId,
+            userProgramId: program.id,
+            programId: body.programId,
+            schemaName: auth.schemaName,
+          });
+          backfillJobId = jobId;
+
+          // Determine enabled events
+          const enabledEvents = (body.events || [])
+            .filter((e) => e.enabled && e.type === 'event')
+            .map((e) => e.name);
+
+          // Parse IDL for decoder
+          const { parseIDL } = await import('../core/idl-parser.js');
+          const parsedIdl = parseIDL(body.idl as any);
+
+          // Start backfill in background (don't await)
+          const rpcUrl = process.env.HELIUS_RPC_URL || process.env.RPC_URL || 'https://api.mainnet-beta.solana.com';
+          backfillManager.startBackfill({
+            jobId,
+            userId: auth.userId,
+            userProgramId: program.id,
+            programId: body.programId,
+            schemaName: auth.schemaName,
+            parsedIdl,
+            rawIdl: body.idl as any,
+            startSlot: body.startFromSlot || null,
+            enabledEvents,
+            rpcUrl,
+          }).catch((err) => {
+            console.error(`[API] Background backfill failed: ${(err as Error).message}`);
+          });
+        } catch (err) {
+          console.error(`[API] Failed to start backfill: ${(err as Error).message}`);
+          // Don't fail the program creation — backfill is optional
+        }
+      }
+
       return reply.status(201).send({
         id: program.id,
         programId: program.programId,
         name: program.name,
         status: program.status,
         createdAt: program.createdAt.toISOString(),
+        backfillJobId,
+        ...(backfillJobId && {
+          demoLimitation: {
+            maxSlots: DEMO_BACKFILL_SLOT_LIMIT,
+            message: `Demo mode: backfill is limited to the last ${DEMO_BACKFILL_SLOT_LIMIT} slots. Full historical backfill available in production.`,
+          },
+        }),
       });
     } catch (err) {
       if (err instanceof AppError) {
@@ -88,7 +142,14 @@ export function registerProgramRoutes(
 
     try {
       const program = await programService.getProgram(auth.userId, id);
-      return program;
+
+      // Attach backfill status if available
+      let backfill = null;
+      if (backfillManager) {
+        backfill = await backfillManager.getJobByUserProgram(id);
+      }
+
+      return { ...program, backfill };
     } catch (err) {
       if (err instanceof AppError) {
         return reply.status(err.statusCode).send(err.toResponse());
@@ -107,9 +168,56 @@ export function registerProgramRoutes(
       name?: string;
       events?: Array<{ name: string; type: string; enabled: boolean; fieldConfig?: Record<string, unknown> }>;
       config?: Record<string, unknown>;
+      retryBackfill?: boolean;
+      cancelBackfill?: boolean;
     } | null;
 
     try {
+      // Handle backfill cancellation
+      if (body?.cancelBackfill && backfillManager) {
+        const existingJob = await backfillManager.getJobByUserProgram(id);
+        if (existingJob && existingJob.status === 'running') {
+          backfillManager.stopBackfill(existingJob.id);
+          await backfillManager.updateJobStatusPublic(existingJob.id, {
+            status: 'cancelled',
+            error: 'Cancelled by user',
+          });
+          return { message: 'Backfill cancelled', jobId: existingJob.id };
+        }
+      }
+
+      // Handle backfill retry
+      if (body?.retryBackfill && backfillManager) {
+        const existingJob = await backfillManager.getJobByUserProgram(id);
+        if (existingJob && (existingJob.status === 'failed' || existingJob.status === 'cancelled')) {
+          // Get program details for retry config
+          const programDetail = await programService.getProgram(auth.userId, id);
+          const { parseIDL } = await import('../core/idl-parser.js');
+          const parsedIdl = parseIDL(programDetail.idl as any);
+          const enabledEvents = programDetail.events
+            .filter((e) => e.enabled && e.type === 'event')
+            .map((e) => e.name);
+          const rpcUrl = process.env.HELIUS_RPC_URL || process.env.RPC_URL || 'https://api.mainnet-beta.solana.com';
+
+          backfillManager.retryBackfill(existingJob.id, {
+            jobId: existingJob.id,
+            userId: auth.userId,
+            userProgramId: id,
+            programId: programDetail.programId,
+            schemaName: auth.schemaName,
+            parsedIdl,
+            rawIdl: programDetail.idl as any,
+            startSlot: existingJob.currentSlot,
+            enabledEvents,
+            rpcUrl,
+          }).catch((err) => {
+            console.error(`[API] Backfill retry failed: ${(err as Error).message}`);
+          });
+
+          return { message: 'Backfill retry started', jobId: existingJob.id };
+        }
+      }
+
       const program = await programService.updateProgram(auth.userId, id, body || {});
       return {
         id: program.id,

@@ -335,8 +335,12 @@ export async function createPlatformServer(
   // User routes (JWT only for writes, JWT or API Key for reads)
   registerUserRoutes(app, userService, pool);
 
+  // Backfill manager
+  const { BackfillManager } = await import('../ingestion/backfill-manager.js');
+  const backfillManager = new BackfillManager(pool);
+
   // Program routes
-  registerProgramRoutes(app, programService, idlDiscoveryService);
+  registerProgramRoutes(app, programService, idlDiscoveryService, backfillManager);
 
   // Data routes (auth + schema middleware)
   registerDataRoutes(app, pool);

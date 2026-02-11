@@ -152,6 +152,21 @@ export interface ProgramInfo {
   updatedAt: string;
 }
 
+export interface BackfillStatus {
+  id: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+  progress: number;
+  currentSlot: number | null;
+  startSlot: number | null;
+  endSlot: number | null;
+  eventsFound: number;
+  eventsSkipped: number;
+  error: string | null;
+  demoLimitation: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
 export interface ProgramDetail extends ProgramInfo {
   idl: object;
   state: {
@@ -160,6 +175,7 @@ export interface ProgramDetail extends ProgramInfo {
     lastPollAt: string | null;
     error: string | null;
   };
+  backfill: BackfillStatus | null;
 }
 
 export interface DiscoveryResult {
