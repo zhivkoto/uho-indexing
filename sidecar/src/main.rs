@@ -156,19 +156,27 @@ impl Plugin for ProgramFilterPlugin {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+
+    // SAFETY: set env vars before any threads are spawned (before tokio runtime)
+    unsafe {
+        std::env::set_var("JETSTREAMER_THREADS", args.threads.to_string());
+        std::env::set_var("JETSTREAMER_CLICKHOUSE_MODE", "off");
+    }
 
     eprintln!(
         "Starting uho-backfill: program={}, slots={}..{}, threads={}",
         args.program, args.start_slot, args.end_slot, args.threads
     );
 
-    // Set thread count via env var (Jetstreamer's convention)
-    std::env::set_var("JETSTREAMER_THREADS", args.threads.to_string());
-    // Disable ClickHouse — we only use stdout
-    std::env::set_var("JETSTREAMER_CLICKHOUSE_MODE", "off");
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(async_main(args))
+}
+
+async fn async_main(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
     let plugin = ProgramFilterPlugin::new(&args.program);
 
