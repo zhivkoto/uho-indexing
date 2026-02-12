@@ -37,6 +37,7 @@ export function OAuthButtons() {
       const res = await fetch(`${API_URL}/api/v1/auth/${provider}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: '{}',
       });
       const data = await res.json() as { url?: string; error?: { message: string } };
