@@ -59,13 +59,18 @@ export class ProgramService {
       throw new ValidationError('Invalid Solana program ID');
     }
 
-    // Check for duplicate first — more informative error than "limit reached"
+    // Check for duplicate — allow re-adding archived programs by removing the old row
     const existing = await this.pool.query(
-      'SELECT id FROM user_programs WHERE user_id = $1 AND program_id = $2',
+      'SELECT id, status FROM user_programs WHERE user_id = $1 AND program_id = $2',
       [userId, input.programId]
     );
     if (existing.rows.length > 0) {
-      throw new ConflictError('You are already indexing this program');
+      if (existing.rows[0].status === 'archived') {
+        // Remove archived program so user can re-add it fresh
+        await this.pool.query('DELETE FROM user_programs WHERE id = $1', [existing.rows[0].id]);
+      } else {
+        throw new ConflictError('You are already indexing this program');
+      }
     }
 
     // Check free tier limit
