@@ -396,6 +396,7 @@ export interface SubscriberInfo {
   programName: string;
   parsedIdl: ParsedIDL;
   enabledEvents: string[];
+  enabledInstructions: string[];
   rawIdl: Record<string, unknown>;
 }
 

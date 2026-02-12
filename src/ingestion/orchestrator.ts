@@ -330,6 +330,9 @@ export class IndexerOrchestrator {
         const enabledEvents = (sub.enabled_events ?? [])
           .filter((e) => e.event_type === 'event')
           .map((e) => e.event_name);
+        const enabledInstructions = (sub.enabled_events ?? [])
+          .filter((e) => e.event_type === 'instruction')
+          .map((e) => e.event_name);
 
         subscribers.push({
           userId: sub.user_id,
@@ -337,6 +340,7 @@ export class IndexerOrchestrator {
           programName: sub.program_name,
           parsedIdl,
           enabledEvents,
+          enabledInstructions,
           rawIdl,
         });
       } catch (err) {

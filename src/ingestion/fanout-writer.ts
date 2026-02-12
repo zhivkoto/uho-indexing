@@ -38,12 +38,15 @@ export class FanoutWriter {
 
     for (const sub of subscribers) {
       try {
-        // Filter events to only those the subscriber has enabled
+        // Filter events and instructions to only those the subscriber has enabled
         const enabledEvents = events.filter((e) =>
           sub.enabledEvents.includes(e.eventName)
         );
+        const enabledInstructions = instructions.filter((ix) =>
+          sub.enabledInstructions.includes(ix.name)
+        );
 
-        if (enabledEvents.length === 0 && instructions.length === 0) continue;
+        if (enabledEvents.length === 0 && enabledInstructions.length === 0) continue;
 
         // Write to subscriber's schema using a schema-scoped client
         const written = await inUserSchema(this.pool, sub.schemaName, async (client) => {
@@ -58,13 +61,17 @@ export class FanoutWriter {
             count += await writer.writeEvents(enabledEvents);
           }
 
-          if (instructions.length > 0) {
-            count += await writer.writeInstructions(instructions);
+          if (enabledInstructions.length > 0) {
+            count += await writer.writeInstructions(enabledInstructions);
           }
 
           // Update _uho_state in subscriber's schema
-          if (events.length > 0) {
-            const latestSlot = Math.max(...events.map((e) => e.slot));
+          const allItems = [...enabledEvents, ...enabledInstructions];
+          if (allItems.length > 0) {
+            const latestSlot = Math.max(
+              ...enabledEvents.map((e) => e.slot),
+              ...enabledInstructions.map((ix) => ix.slot)
+            );
             const currentState = await writer.getState(programId);
             await writer.updateState(programId, {
               lastSlot: latestSlot,
