@@ -51,10 +51,12 @@ export class InstructionDecoder {
       // (already decoded by the RPC). We want the raw ones.
       if (!('data' in ix)) continue; // Skip fully-parsed instructions (e.g., system program)
       if (!ix.programId || !ix.data || !ix.accounts) continue;
-      if (ix.programId.toBase58() !== programId) continue;
+      const ixPid = ix.programId.toBase58();
+      if (ixPid !== programId) continue;
 
       const decoded = this.decodeInstructionData(ix.data, ix.accounts.map((a: any) => a.toBase58?.() ?? String(a)));
       if (decoded) {
+        console.log(`  🔧 Decoded instruction: ${decoded.instructionName} (slot ${slot})`);
         results.push({
           ...decoded,
           programId,
@@ -63,6 +65,8 @@ export class InstructionDecoder {
           txSignature,
           ixIndex: i,
         });
+      } else {
+        console.log(`  ❓ No disc match for ${programId.slice(0,8)}... data[0..8] from tx ${txSignature?.slice(0,12)}`);
       }
     }
 
