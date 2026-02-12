@@ -26,6 +26,7 @@ export function UserMenu({ collapsed }: UserMenuProps) {
   return (
     <Dropdown
       align="left"
+      direction="up"
       trigger={
         <button
           className={cn(
