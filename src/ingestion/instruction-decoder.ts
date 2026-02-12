@@ -38,7 +38,7 @@ export class InstructionDecoder {
     const blockTime = tx.blockTime ?? null;
     const programId = this.parsedIdl.programId;
 
-    console.log(`[InstructionDecoder] Decoding tx ${txSignature.slice(0, 12)}... for ${programId.slice(0, 8)}... (${this.instructions.length} known instructions)`);
+    try {
 
     const message = tx.transaction.message;
 
@@ -86,6 +86,11 @@ export class InstructionDecoder {
           });
         }
       }
+    }
+
+    } catch (err) {
+      console.error(`[InstructionDecoder] Error decoding tx ${txSignature?.slice(0, 12)}...: ${(err as Error).message}`);
+      console.error(`[InstructionDecoder] Stack: ${(err as Error).stack?.split('\n').slice(0, 3).join('\n')}`);
     }
 
     return results;
