@@ -55,7 +55,7 @@ export function EventDistribution({ programs }: EventDistributionProps) {
   return (
     <Card padding="md">
       <h3 className="text-[15px] font-semibold leading-5 text-[#EDEDEF] mb-4">Event Distribution</h3>
-      <div className="h-[180px]">
+      <div className="h-[220px]">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} layout="vertical">
             <XAxis
@@ -69,10 +69,10 @@ export function EventDistribution({ programs }: EventDistributionProps) {
               type="category"
               dataKey="name"
               stroke="#63637A"
-              tick={{ fontSize: 11, fontFamily: 'JetBrains Mono' }}
+              tick={{ fontSize: 10, fontFamily: 'JetBrains Mono' }}
               tickLine={false}
               axisLine={false}
-              width={80}
+              width={160}
             />
             <Tooltip content={<CustomTooltip />} />
             <Bar dataKey="count" radius={[0, 4, 4, 0]}>
