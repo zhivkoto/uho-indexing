@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { getHealth, getStatus } from '@/lib/api';
+import { getHealth, getPrograms } from '@/lib/api';
 import { LivePulse } from '@/components/ui/spinner';
 import { formatSlot } from '@/lib/utils';
 
@@ -18,15 +18,15 @@ export function Header({ title, children }: HeaderProps) {
     retry: 1,
   });
 
-  const { data: status } = useQuery({
-    queryKey: ['status'],
-    queryFn: getStatus,
+  const { data: programsData } = useQuery({
+    queryKey: ['programs'],
+    queryFn: getPrograms,
     refetchInterval: 5000,
     retry: 1,
   });
 
   const isHealthy = health?.status === 'ok' || health?.status === 'healthy';
-  const currentSlot = status?.indexer?.currentSlot;
+  const currentSlot = programsData?.data?.reduce((max, p) => Math.max(max, p.lastSlot || 0), 0) || undefined;
 
   return (
     <header className="h-14 bg-[#0F0F12]/80 backdrop-blur-md border-b border-[#1E1E26] flex items-center justify-between px-6 sticky top-0 z-30">

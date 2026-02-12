@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ScrollText } from 'lucide-react';
-import { getStatus, getHealth } from '@/lib/api';
+import { getPrograms, getHealth } from '@/lib/api';
 import { PageContainer } from '@/components/layout/page-container';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -37,9 +37,9 @@ export default function LogsPage() {
     retry: 1,
   });
 
-  const { data: status } = useQuery({
-    queryKey: ['status'],
-    queryFn: getStatus,
+  const { data: programsData } = useQuery({
+    queryKey: ['programs'],
+    queryFn: getPrograms,
     refetchInterval: 5000,
     retry: 1,
   });
@@ -58,30 +58,31 @@ export default function LogsPage() {
   }, []);
 
   useEffect(() => {
-    if (!status) return;
-    const statusStr = JSON.stringify(status);
+    const programs = programsData?.data;
+    if (!programs) return;
+    const statusStr = JSON.stringify(programs);
     if (statusStr === prevStatusRef.current) return;
 
     if (prevStatusRef.current === '') {
       addLog('info', 'Connected to Uho indexer');
-      if (status.indexer?.currentSlot) {
-        addLog('info', `Current slot: ${status.indexer.currentSlot.toLocaleString()}`);
+      const maxSlot = programs.reduce((max, p) => Math.max(max, p.lastSlot || 0), 0);
+      if (maxSlot) {
+        addLog('info', `Latest slot: ${maxSlot.toLocaleString()}`);
       }
-      status.programs?.forEach((p) => {
-        addLog('info', `Monitoring program: ${p.name}`, `${p.events.length} event types`);
+      programs.forEach((p) => {
+        const enabledCount = p.events?.filter(e => e.enabled).length || 0;
+        addLog('info', `Monitoring program: ${p.name}`, `${enabledCount} enabled event/instruction types`);
       });
     } else {
-      const prevStatus = JSON.parse(prevStatusRef.current);
-      if (status.indexer?.currentSlot !== prevStatus.indexer?.currentSlot) {
-        const from = prevStatus.indexer?.currentSlot || 0;
-        const to = status.indexer?.currentSlot || 0;
-        if (from && to) {
-          addLog('info', `Polled slots ${from.toLocaleString()}–${to.toLocaleString()}`);
-        }
+      const prevPrograms = JSON.parse(prevStatusRef.current);
+      const prevMaxSlot = Array.isArray(prevPrograms) ? prevPrograms.reduce((max: number, p: { lastSlot?: number }) => Math.max(max, p.lastSlot || 0), 0) : 0;
+      const currMaxSlot = programs.reduce((max, p) => Math.max(max, p.lastSlot || 0), 0);
+      if (currMaxSlot !== prevMaxSlot && prevMaxSlot && currMaxSlot) {
+        addLog('info', `Polled slots ${prevMaxSlot.toLocaleString()}–${currMaxSlot.toLocaleString()}`);
       }
     }
     prevStatusRef.current = statusStr;
-  }, [status, addLog]);
+  }, [programsData, addLog]);
 
   useEffect(() => {
     if (health) {
@@ -92,10 +93,10 @@ export default function LogsPage() {
   }, [health, addLog]);
 
   useEffect(() => {
-    if (!health && !status) {
+    if (!health && !programsData) {
       addLog('error', 'Failed to connect to Uho API', 'Is the indexer running?');
     }
-  }, [health, status, addLog]);
+  }, [health, programsData, addLog]);
 
   useEffect(() => {
     if (autoScroll && logRef.current) {
