@@ -194,20 +194,12 @@ export default function AddProgramPage() {
                   <AlertCircle className="w-3 h-3" /> Invalid Solana program address
                 </p>
               )}
-              <div className="flex justify-end gap-3">
+              <div className="flex justify-end">
                 <Button
-                  variant="secondary"
                   onClick={() => setStep('idl')}
                   disabled={!isValidPublicKey(programId)}
                 >
-                  Upload IDL Manually
-                </Button>
-                <Button
-                  onClick={handleDiscover}
-                  disabled={!isValidPublicKey(programId)}
-                  loading={discovering}
-                >
-                  <Search className="w-4 h-4" /> Discover IDL
+                  Next <ArrowRight className="w-4 h-4" />
                 </Button>
               </div>
             </div>
@@ -217,22 +209,33 @@ export default function AddProgramPage() {
         {/* Step 2: Manual IDL Upload */}
         {step === 'idl' && (
           <Card>
-            <h2 className="text-lg font-semibold text-[#EDEDEF] mb-1">Upload IDL</h2>
+            <h2 className="text-lg font-semibold text-[#EDEDEF] mb-1">Load IDL</h2>
             <p className="text-sm text-[#A0A0AB] mb-6">
-              IDL not found on-chain. Upload the Anchor IDL JSON file manually.
+              Discover the IDL on-chain or upload it manually.
             </p>
-            <label className="flex flex-col items-center justify-center p-8 border-2 border-dashed border-[#2A2A35] rounded-xl hover:border-[#22D3EE]/50 transition-colors cursor-pointer">
-              <Upload className="w-8 h-8 text-[#63637A] mb-3" />
-              <span className="text-sm font-medium text-[#EDEDEF]">Click to upload IDL JSON</span>
-              <span className="text-xs text-[#63637A] mt-1">Max 5MB · Anchor IDL format</span>
-              <input
-                type="file"
-                accept=".json"
-                onChange={handleIdlUpload}
-                className="hidden"
-              />
-            </label>
-            <div className="flex justify-between mt-4">
+            <div className="grid grid-cols-2 gap-4 mb-6">
+              <button
+                onClick={handleDiscover}
+                disabled={discovering}
+                className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-[#2A2A35] rounded-xl hover:border-[#22D3EE]/50 transition-colors cursor-pointer"
+              >
+                {discovering ? <Spinner size="md" /> : <Search className="w-8 h-8 text-[#22D3EE] mb-3" />}
+                <span className="text-sm font-medium text-[#EDEDEF]">Discover IDL</span>
+                <span className="text-xs text-[#63637A] mt-1">Auto-detect from on-chain</span>
+              </button>
+              <label className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-[#2A2A35] rounded-xl hover:border-[#22D3EE]/50 transition-colors cursor-pointer">
+                <Upload className="w-8 h-8 text-[#63637A] mb-3" />
+                <span className="text-sm font-medium text-[#EDEDEF]">Upload IDL</span>
+                <span className="text-xs text-[#63637A] mt-1">Anchor IDL JSON · Max 5MB</span>
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={handleIdlUpload}
+                  className="hidden"
+                />
+              </label>
+            </div>
+            <div className="flex justify-between">
               <Button variant="ghost" onClick={() => setStep('program-id')}>
                 <ArrowLeft className="w-4 h-4" /> Back
               </Button>
