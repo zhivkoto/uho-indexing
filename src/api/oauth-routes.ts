@@ -352,13 +352,25 @@ export function registerOAuthRoutes(
     }
 
     try {
-      // Verify the Privy token using official SDK
-      const { PrivyClient } = await import('@privy-io/node');
-      const privyClient = new PrivyClient(config.privyAppId, config.privyAppSecret);
+      // Verify the Privy access token using JWKS
+      const { verifyAccessToken, createPrivyAppJWKS } = await import('@privy-io/node');
+
+      const jwks = createPrivyAppJWKS({
+        appId: config.privyAppId,
+        apiUrl: 'https://auth.privy.io',
+        headers: {
+          'privy-app-id': config.privyAppId,
+          Authorization: `Bearer ${config.privyAppSecret}`,
+        },
+      });
 
       let verifiedClaims;
       try {
-        verifiedClaims = await privyClient.verifyAccessToken(body.token);
+        verifiedClaims = await verifyAccessToken({
+          access_token: body.token,
+          app_id: config.privyAppId,
+          verification_key: jwks,
+        });
       } catch (verifyErr) {
         console.error('[OAuth] Privy verification failed:', (verifyErr as Error).message);
         return reply.status(401).send({
@@ -366,8 +378,10 @@ export function registerOAuthRoutes(
         });
       }
 
-      // Get user details from Privy to find wallet address
-      const privyUser = await privyClient.getUser(verifiedClaims.userId);
+      // Get user details from Privy API to find wallet address
+      const { default: PrivyAPI } = await import('@privy-io/node');
+      const privyApi = new PrivyAPI({ appID: config.privyAppId, appSecret: config.privyAppSecret });
+      const privyUser = await privyApi.users.get(verifiedClaims.userId);
 
       const walletAccount = privyUser.linkedAccounts?.find(
         (a: any) => a.type === 'wallet' && a.chainType === 'solana'
