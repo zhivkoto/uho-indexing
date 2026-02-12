@@ -38,7 +38,6 @@ function PrivyWrapper({ appId, children }: { appId: string; children: ReactNode 
         appearance: {
           theme: 'dark',
           accentColor: '#22D3EE',
-          walletChainType: 'solana-only',
           walletList: ['phantom', 'solflare', 'backpack', 'detected_solana_wallets'],
         },
         loginMethods: ['wallet'],
