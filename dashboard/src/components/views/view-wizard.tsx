@@ -80,17 +80,29 @@ export function ViewWizard() {
     if (!programDetail?.idl || !selectedEvent) return [];
     const idl = programDetail.idl as Record<string, unknown>;
 
-    // Try events
+    // Try events — check for inline fields first, then look up in types
     const events = (idl.events || []) as Array<{ name: string; fields?: Array<{ name: string; type: unknown }> }>;
+    const types = (idl.types || []) as Array<{ name: string; type?: { kind: string; fields?: Array<{ name: string; type: unknown }> } }>;
     const found = events.find((e) => e.name === selectedEvent);
-    if (found?.fields) {
-      return [
-        ...SYSTEM_FIELDS,
-        ...found.fields.map((f) => ({
-          name: f.name,
-          type: typeof f.type === 'string' ? f.type : JSON.stringify(f.type),
-        })),
-      ];
+    if (found) {
+      // Inline fields (older IDL format)
+      let fields = found.fields;
+      // If no inline fields, look up in types (newer Anchor IDL format)
+      if (!fields || fields.length === 0) {
+        const typeDef = types.find((t) => t.name === selectedEvent);
+        if (typeDef?.type?.fields) {
+          fields = typeDef.type.fields;
+        }
+      }
+      if (fields && fields.length > 0) {
+        return [
+          ...SYSTEM_FIELDS,
+          ...fields.map((f) => ({
+            name: f.name,
+            type: typeof f.type === 'string' ? f.type : JSON.stringify(f.type),
+          })),
+        ];
+      }
     }
 
     // Try instructions
@@ -101,7 +113,7 @@ export function ViewWizard() {
     }>;
     const ix = instructions.find((i) => i.name === selectedEvent);
     if (ix) {
-      const fields = [
+      const ixFields = [
         ...SYSTEM_FIELDS,
         ...(ix.args || []).map((a) => ({
           name: a.name,
@@ -112,7 +124,19 @@ export function ViewWizard() {
           type: 'publicKey',
         })),
       ];
-      return fields;
+      return ixFields;
+    }
+
+    // Last resort: check types directly (event might not be in events array)
+    const typeDef = types.find((t) => t.name === selectedEvent);
+    if (typeDef?.type?.fields) {
+      return [
+        ...SYSTEM_FIELDS,
+        ...typeDef.type.fields.map((f) => ({
+          name: f.name,
+          type: typeof f.type === 'string' ? f.type : JSON.stringify(f.type),
+        })),
+      ];
     }
 
     return SYSTEM_FIELDS;
