@@ -86,6 +86,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     await authLogout();
+    // Also log out of Privy to prevent auto-re-login via bridge
+    try {
+      const mod = await import('@privy-io/react-auth');
+      // getAccessToken is available as a standalone import — if it returns non-null, user is privy-authed
+      // We store a logout fn from the bridge
+      if ((window as any).__privyLogout) {
+        await (window as any).__privyLogout();
+      }
+    } catch {
+      // Privy not loaded — fine
+    }
     setUser(null);
   }, []);
 

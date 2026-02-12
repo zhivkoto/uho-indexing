@@ -50,6 +50,12 @@ function PrivyAuthBridgeInner({
 }) {
   const { authenticated, getAccessToken, logout: privyLogout } = usePrivy();
 
+  // Expose Privy logout so AuthProvider can call it on sign out
+  useEffect(() => {
+    (window as any).__privyLogout = privyLogout;
+    return () => { delete (window as any).__privyLogout; };
+  }, [privyLogout]);
+
   useEffect(() => {
     // When Privy says we're authenticated but Uho doesn't know yet
     if (authenticated && !isAuthenticated && !processingRef.current) {
