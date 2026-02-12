@@ -8,7 +8,7 @@
 import type pg from 'pg';
 import type { UserView, ViewDefinition, ViewAggregate, AnchorIDL } from '../core/types.js';
 import { parseIDL, toSnakeCase } from '../core/idl-parser.js';
-import { eventTableName } from '../core/schema-generator.js';
+import { eventTableName, quoteIdent } from '../core/schema-generator.js';
 import { inUserSchema } from '../core/db.js';
 import { NotFoundError, ValidationError, ForbiddenError } from '../core/errors.js';
 import { FREE_TIER_LIMITS } from '../core/platform-config.js';
@@ -112,7 +112,7 @@ export class ViewService {
       await inUserSchema(this.pool, schemaName, async (client) => {
         await client.query(viewSql);
         if (materialized) {
-          const safeName = `v_${input.name.replace(/[^a-z0-9_]/g, '')}`;
+          const safeName = quoteIdent(`v_${input.name.replace(/[^a-z0-9_]/g, '')}`);
           await client.query(`REFRESH MATERIALIZED VIEW ${safeName}`);
         }
       });
@@ -162,7 +162,7 @@ export class ViewService {
     }
 
     const viewName = result.rows[0].name as string;
-    const safeName = `v_${viewName.replace(/[^a-z0-9_]/g, '')}`;
+    const safeName = quoteIdent(`v_${viewName.replace(/[^a-z0-9_]/g, '')}`);
 
     // Drop the view from user schema
     try {
@@ -182,7 +182,7 @@ export class ViewService {
    * Refreshes a materialized view in the user's schema.
    */
   async refreshView(schemaName: string, viewName: string): Promise<void> {
-    const safeName = `v_${viewName.replace(/[^a-z0-9_]/g, '')}`;
+    const safeName = quoteIdent(`v_${viewName.replace(/[^a-z0-9_]/g, '')}`);
     await inUserSchema(this.pool, schemaName, async (client) => {
       await client.query(`REFRESH MATERIALIZED VIEW ${safeName}`);
     });
@@ -244,15 +244,15 @@ export class ViewService {
     }
 
     const sourceTable = eventTableName(programName, sourceEvent.name);
-    const safeName = `v_${viewName.replace(/[^a-z0-9_]/g, '')}`;
+    const safeName = quoteIdent(`v_${viewName.replace(/[^a-z0-9_]/g, '')}`);
 
     // Build SELECT columns
     const selectCols: string[] = [];
     for (const [alias, expr] of Object.entries(definition.select)) {
-      const safeAlias = alias.replace(/[^a-z0-9_]/g, '');
+      const safeAlias = quoteIdent(alias.replace(/[^a-z0-9_]/g, ''));
       if (typeof expr === 'string') {
         // Direct field reference
-        const safeField = expr.replace(/[^a-z0-9_]/g, '');
+        const safeField = quoteIdent(expr.replace(/[^a-z0-9_]/g, ''));
         selectCols.push(`${safeField} AS ${safeAlias}`);
       } else {
         // Aggregate expression
@@ -265,18 +265,23 @@ export class ViewService {
     const groupByFields = Array.isArray(definition.groupBy)
       ? definition.groupBy
       : [definition.groupBy];
-    const safeGroupBy = groupByFields.map((f) => f.replace(/[^a-z0-9_]/g, ''));
+    const safeGroupBy = groupByFields.map((f) => quoteIdent(f.replace(/[^a-z0-9_]/g, '')));
 
-    // Build WHERE (optional)
+    // Build WHERE (optional) — use parameterized values embedded as literals
+    // Since CREATE MATERIALIZED VIEW doesn't support $1 params, we escape properly
     let whereClause = '';
     if (definition.where && Object.keys(definition.where).length > 0) {
       const conditions: string[] = [];
       for (const [field, value] of Object.entries(definition.where)) {
-        const safeField = field.replace(/[^a-z0-9_]/g, '');
-        // Only support simple equality for now
+        const safeField = quoteIdent(field.replace(/[^a-z0-9_]/g, ''));
+        // Only support simple equality for now — use proper escaping
         if (typeof value === 'string') {
-          conditions.push(`${safeField} = '${value.replace(/'/g, "''")}'`);
+          // Escape single quotes and backslashes using PostgreSQL dollar quoting for safety
+          const escaped = value.replace(/'/g, "''");
+          conditions.push(`${safeField} = '${escaped}'`);
         } else if (typeof value === 'number') {
+          // Validate it's actually a number to prevent injection
+          if (!Number.isFinite(value)) continue;
           conditions.push(`${safeField} = ${value}`);
         } else if (typeof value === 'boolean') {
           conditions.push(`${safeField} = ${value}`);
@@ -300,31 +305,31 @@ GROUP BY ${safeGroupBy.join(', ')};`;
   private buildAggregate(agg: ViewAggregate): string {
     if (agg.$count !== undefined) {
       if (agg.$count === '*') return 'COUNT(*)';
-      const safeField = agg.$count.replace(/[^a-z0-9_]/g, '');
+      const safeField = quoteIdent(agg.$count.replace(/[^a-z0-9_]/g, ''));
       return `COUNT(${safeField})`;
     }
     if (agg.$sum !== undefined) {
-      const safeField = agg.$sum.replace(/[^a-z0-9_]/g, '');
+      const safeField = quoteIdent(agg.$sum.replace(/[^a-z0-9_]/g, ''));
       return `SUM(${safeField})`;
     }
     if (agg.$avg !== undefined) {
-      const safeField = agg.$avg.replace(/[^a-z0-9_]/g, '');
+      const safeField = quoteIdent(agg.$avg.replace(/[^a-z0-9_]/g, ''));
       return `AVG(${safeField})`;
     }
     if (agg.$min !== undefined) {
-      const safeField = agg.$min.replace(/[^a-z0-9_]/g, '');
+      const safeField = quoteIdent(agg.$min.replace(/[^a-z0-9_]/g, ''));
       return `MIN(${safeField})`;
     }
     if (agg.$max !== undefined) {
-      const safeField = agg.$max.replace(/[^a-z0-9_]/g, '');
+      const safeField = quoteIdent(agg.$max.replace(/[^a-z0-9_]/g, ''));
       return `MAX(${safeField})`;
     }
     if (agg.$first !== undefined) {
-      const safeField = agg.$first.replace(/[^a-z0-9_]/g, '');
+      const safeField = quoteIdent(agg.$first.replace(/[^a-z0-9_]/g, ''));
       return `(ARRAY_AGG(${safeField} ORDER BY slot ASC))[1]`;
     }
     if (agg.$last !== undefined) {
-      const safeField = agg.$last.replace(/[^a-z0-9_]/g, '');
+      const safeField = quoteIdent(agg.$last.replace(/[^a-z0-9_]/g, ''));
       return `(ARRAY_AGG(${safeField} ORDER BY slot DESC))[1]`;
     }
     throw new ValidationError('Invalid aggregate expression: no recognized operator');

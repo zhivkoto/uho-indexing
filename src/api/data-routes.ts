@@ -16,7 +16,7 @@ import type pg from 'pg';
 import { authMiddleware } from '../middleware/auth.js';
 import { schemaMiddleware } from '../middleware/schema.js';
 import { toSnakeCase, parseIDL } from '../core/idl-parser.js';
-import { eventTableName, instructionTableName } from '../core/schema-generator.js';
+import { eventTableName, instructionTableName, quoteIdent } from '../core/schema-generator.js';
 import type { AnchorIDL, ParsedEvent, ParsedInstruction, ParsedField } from '../core/types.js';
 import { NotFoundError, ValidationError, AppError } from '../core/errors.js';
 
@@ -71,6 +71,8 @@ export function registerDataRoutes(app: FastifyInstance, pool: pg.Pool): void {
 
       // Build UNION ALL query across all enabled event tables
       const unions: string[] = [];
+      const unionParams: unknown[] = [];
+      let paramIdx = 1;
       for (const row of programsResult.rows) {
         if (filterProgram && row.name !== filterProgram) continue;
 
@@ -86,9 +88,11 @@ export function registerDataRoutes(app: FastifyInstance, pool: pg.Pool): void {
         for (const evt of eventsResult.rows) {
           if (filterEvent && evt.event_name !== filterEvent) continue;
           const tableName = eventTableName(idlProgramName, evt.event_name);
+          unionParams.push(row.name, evt.event_name);
           unions.push(
-            `SELECT slot, tx_signature, block_time, '${row.name.replace(/'/g, "''")}' as program_name, '${evt.event_name.replace(/'/g, "''")}' as event_type FROM ${tableName}`
+            `SELECT slot, tx_signature, block_time, $${paramIdx}::text as program_name, $${paramIdx + 1}::text as event_type FROM ${tableName}`
           );
+          paramIdx += 2;
         }
       }
 
@@ -97,12 +101,14 @@ export function registerDataRoutes(app: FastifyInstance, pool: pg.Pool): void {
       }
 
       const unionSql = unions.join(' UNION ALL ');
-      const dataSql = `SELECT * FROM (${unionSql}) combined ORDER BY slot ${order} LIMIT $1 OFFSET $2`;
-      const dataResult = await client.query(dataSql, [limit, offset]);
+      unionParams.push(limit, offset);
+      const dataSql = `SELECT * FROM (${unionSql}) combined ORDER BY slot ${order} LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`;
+      const dataResult = await client.query(dataSql, unionParams);
 
-      // Count total
+      // Count total (uses same params minus limit/offset)
+      const countParams = unionParams.slice(0, -2);
       const countSql = `SELECT COUNT(*)::int as count FROM (${unionSql}) combined`;
-      const countResult = await client.query(countSql);
+      const countResult = await client.query(countSql, countParams);
       const total = countResult.rows[0]?.count ?? 0;
 
       return {
@@ -159,14 +165,14 @@ export function registerDataRoutes(app: FastifyInstance, pool: pg.Pool): void {
           throw new ValidationError('after_id must be a valid integer');
         }
         params.push(parsedAfterId);
-        whereClauses.push(`id ${cursorDirection} $${params.length}`);
+        whereClauses.push(`"id" ${cursorDirection} $${params.length}`);
       }
 
       const whereStr = whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : '';
       const paramOffset = params.length;
 
       // For cursor pagination, order by id in the requested direction
-      const effectiveOrderBy = useCursor ? 'id' : orderBy;
+      const effectiveOrderBy = useCursor ? '"id"' : quoteIdent(orderBy);
       const effectiveOrder = useCursor ? order : order;
 
       const dataSql = `
@@ -303,14 +309,14 @@ export function registerDataRoutes(app: FastifyInstance, pool: pg.Pool): void {
         throw new NotFoundError('View not found');
       }
 
-      const safeViewName = `v_${viewName.replace(/[^a-z0-9_]/g, '')}`;
+      const safeViewName = quoteIdent(`v_${viewName.replace(/[^a-z0-9_]/g, '')}`);
       const limit = Math.min(Math.max(parseInt(query.limit || '50', 10), 1), 1000);
       const offset = Math.max(parseInt(query.offset || '0', 10), 0);
       const order = query.order === 'asc' ? 'ASC' : 'DESC';
 
       // Validate orderBy column name (alphanumeric + underscore only)
       const orderByCol = query.orderBy && /^[a-z_][a-z0-9_]*$/i.test(query.orderBy)
-        ? `"${query.orderBy}"`
+        ? quoteIdent(query.orderBy)
         : '1';
       const dataSql = `SELECT * FROM ${safeViewName} ORDER BY ${orderByCol} ${order} LIMIT $1 OFFSET $2`;
       const countSql = `SELECT COUNT(*) as total FROM ${safeViewName}`;
@@ -478,19 +484,19 @@ function buildWhereClause(
 
   // Built-in time range filters
   if (query.from) {
-    whereClauses.push(`block_time >= $${paramIdx++}`);
+    whereClauses.push(`"block_time" >= $${paramIdx++}`);
     params.push(query.from);
   }
   if (query.to) {
-    whereClauses.push(`block_time <= $${paramIdx++}`);
+    whereClauses.push(`"block_time" <= $${paramIdx++}`);
     params.push(query.to);
   }
   if (query.slotFrom) {
-    whereClauses.push(`slot >= $${paramIdx++}`);
+    whereClauses.push(`"slot" >= $${paramIdx++}`);
     params.push(parseInt(query.slotFrom, 10));
   }
   if (query.slotTo) {
-    whereClauses.push(`slot <= $${paramIdx++}`);
+    whereClauses.push(`"slot" <= $${paramIdx++}`);
     params.push(parseInt(query.slotTo, 10));
   }
 
@@ -508,7 +514,7 @@ function buildWhereClause(
         const snakeKey = toSnakeCase(baseKey);
         if (knownFields.has(snakeKey) && numericFields.has(snakeKey)) {
           const op = RANGE_OPERATORS[suffix];
-          whereClauses.push(`${snakeKey} ${op} $${paramIdx++}`);
+          whereClauses.push(`${quoteIdent(snakeKey)} ${op} $${paramIdx++}`);
           params.push(parseNumericValue(value));
           matchedRange = true;
         }
@@ -522,10 +528,10 @@ function buildWhereClause(
     if (knownFields.has(snakeKey)) {
       // Parse boolean values
       if (value === 'true' || value === 'false') {
-        whereClauses.push(`${snakeKey} = $${paramIdx++}`);
+        whereClauses.push(`${quoteIdent(snakeKey)} = $${paramIdx++}`);
         params.push(value === 'true');
       } else {
-        whereClauses.push(`${snakeKey} = $${paramIdx++}`);
+        whereClauses.push(`${quoteIdent(snakeKey)} = $${paramIdx++}`);
         params.push(value);
       }
     }

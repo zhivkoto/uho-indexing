@@ -10,7 +10,8 @@ import type { ProgramService } from '../services/program-service.js';
 import type { IdlDiscoveryService } from '../services/idl-discovery.js';
 import { type BackfillManager, DEMO_BACKFILL_SLOT_LIMIT } from '../ingestion/backfill-manager.js';
 import { authMiddleware, jwtOnlyMiddleware } from '../middleware/auth.js';
-import { AppError } from '../core/errors.js';
+import { AppError, ValidationError } from '../core/errors.js';
+import { IDL_NAME_REGEX } from '../core/schema-generator.js';
 
 // =============================================================================
 // Route Registration
@@ -56,6 +57,37 @@ export function registerProgramRoutes(
     if (!body?.programId || !body?.idl) {
       return reply.status(422).send({
         error: { code: 'VALIDATION_ERROR', message: 'programId and idl are required' },
+      });
+    }
+
+    // Validate IDL names to prevent SQL injection via identifier interpolation
+    try {
+      const { parseIDL } = await import('../core/idl-parser.js');
+      const parsedIdl = parseIDL(body.idl as any);
+
+      if (!IDL_NAME_REGEX.test(parsedIdl.programName)) {
+        return reply.status(422).send({
+          error: { code: 'VALIDATION_ERROR', message: `Invalid program name in IDL: '${parsedIdl.programName}'. Must match /^[a-zA-Z][a-zA-Z0-9_]{0,62}$/` },
+        });
+      }
+      for (const event of parsedIdl.events) {
+        if (!IDL_NAME_REGEX.test(event.name)) {
+          return reply.status(422).send({
+            error: { code: 'VALIDATION_ERROR', message: `Invalid event name in IDL: '${event.name}'. Must match /^[a-zA-Z][a-zA-Z0-9_]{0,62}$/` },
+          });
+        }
+      }
+      for (const ix of parsedIdl.instructions) {
+        if (!IDL_NAME_REGEX.test(ix.name)) {
+          return reply.status(422).send({
+            error: { code: 'VALIDATION_ERROR', message: `Invalid instruction name in IDL: '${ix.name}'. Must match /^[a-zA-Z][a-zA-Z0-9_]{0,62}$/` },
+          });
+        }
+      }
+    } catch (err) {
+      if ((err as any)?.statusCode) throw err;
+      return reply.status(422).send({
+        error: { code: 'VALIDATION_ERROR', message: `Failed to parse IDL: ${(err as Error).message}` },
       });
     }
 

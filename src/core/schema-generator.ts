@@ -11,16 +11,48 @@ import type { ParsedIDL, ParsedEvent, ParsedField, ParsedInstruction, ProgramCon
 import { toSnakeCase } from './idl-parser.js';
 
 // =============================================================================
+// Identifier Quoting
+// =============================================================================
+
+/**
+ * Quotes a PostgreSQL identifier (table name, column name) by wrapping it in
+ * double quotes and escaping any internal double quotes by doubling them.
+ * This prevents SQL injection via identifier names.
+ */
+export function quoteIdent(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+/**
+ * Validates that an IDL name (program, event, instruction) is safe.
+ * Must start with a letter and contain only alphanumeric + underscore, max 63 chars.
+ */
+export const IDL_NAME_REGEX = /^[a-zA-Z][a-zA-Z0-9_]{0,62}$/;
+
+export function validateIdlName(name: string, label: string): void {
+  if (!IDL_NAME_REGEX.test(name)) {
+    throw new Error(`Invalid ${label} name: '${name}'. Must match /^[a-zA-Z][a-zA-Z0-9_]{0,62}$/`);
+  }
+}
+
+// =============================================================================
 // Table Name Generation
 // =============================================================================
 
 /**
- * Generates the PostgreSQL table name for a given program + event.
+ * Generates the raw (unquoted) PostgreSQL table name for a given program + event.
  * Convention: {program_name}_{snake_case_event_name}
  * Example: "sample_dex" + "SwapEvent" → "sample_dex_swap_event"
  */
-export function eventTableName(programName: string, eventName: string): string {
+export function eventTableNameRaw(programName: string, eventName: string): string {
   return `${programName}_${toSnakeCase(eventName)}`;
+}
+
+/**
+ * Generates the quoted PostgreSQL table name for a given program + event.
+ */
+export function eventTableName(programName: string, eventName: string): string {
+  return quoteIdent(eventTableNameRaw(programName, eventName));
 }
 
 // =============================================================================
@@ -68,7 +100,8 @@ function fieldToColumn(field: ParsedField): string {
  * Includes standard metadata columns, IDL-derived columns, and indexes.
  */
 export function generateEventTable(programName: string, event: ParsedEvent): string {
-  const tableName = eventTableName(programName, event.name);
+  const tableNameQuoted = eventTableName(programName, event.name);
+  const tableNameRaw = eventTableNameRaw(programName, event.name);
 
   // Build the column definitions for IDL fields
   const fieldColumns = event.fields.map(fieldToColumn);
@@ -85,15 +118,15 @@ export function generateEventTable(programName: string, event: ParsedEvent): str
     '    indexed_at            TIMESTAMPTZ DEFAULT NOW()',
   ];
 
-  const createTable = `CREATE TABLE IF NOT EXISTS ${tableName} (\n${columns.join(',\n')}\n);`;
+  const createTable = `CREATE TABLE IF NOT EXISTS ${tableNameQuoted} (\n${columns.join(',\n')}\n);`;
 
-  // Generate indexes for common query patterns
+  // Generate indexes for common query patterns (index names use raw name, table refs use quoted)
   const indexes = [
-    `CREATE INDEX IF NOT EXISTS idx_${tableName}_slot ON ${tableName}(slot);`,
-    `CREATE INDEX IF NOT EXISTS idx_${tableName}_tx ON ${tableName}(tx_signature);`,
-    `CREATE INDEX IF NOT EXISTS idx_${tableName}_block_time ON ${tableName}(block_time);`,
+    `CREATE INDEX IF NOT EXISTS idx_${tableNameRaw}_slot ON ${tableNameQuoted}(slot);`,
+    `CREATE INDEX IF NOT EXISTS idx_${tableNameRaw}_tx ON ${tableNameQuoted}(tx_signature);`,
+    `CREATE INDEX IF NOT EXISTS idx_${tableNameRaw}_block_time ON ${tableNameQuoted}(block_time);`,
     // Unique constraint to prevent duplicate event inserts
-    `CREATE UNIQUE INDEX IF NOT EXISTS uq_${tableName}_tx ON ${tableName}(tx_signature, ix_index, COALESCE(inner_ix_index, -1));`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_${tableNameRaw}_tx ON ${tableNameQuoted}(tx_signature, ix_index, COALESCE(inner_ix_index, -1));`,
   ];
 
   return [createTable, '', ...indexes].join('\n');
@@ -108,8 +141,18 @@ export function generateEventTable(programName: string, event: ParsedEvent): str
  * Convention: {program_name}_{snake_case_instruction_name}_ix
  * Example: "solfi_v2" + "swap" → "solfi_v2_swap_ix"
  */
-export function instructionTableName(programName: string, instructionName: string): string {
+/**
+ * Generates the raw (unquoted) PostgreSQL table name for a given program + instruction.
+ */
+export function instructionTableNameRaw(programName: string, instructionName: string): string {
   return `${programName}_${toSnakeCase(instructionName)}_ix`;
+}
+
+/**
+ * Generates the quoted PostgreSQL table name for a given program + instruction.
+ */
+export function instructionTableName(programName: string, instructionName: string): string {
+  return quoteIdent(instructionTableNameRaw(programName, instructionName));
 }
 
 /**
@@ -124,7 +167,8 @@ function quoteCol(name: string): string {
 }
 
 export function generateInstructionTable(programName: string, instruction: ParsedInstruction): string {
-  const tableName = instructionTableName(programName, instruction.name);
+  const tableNameQuoted = instructionTableName(programName, instruction.name);
+  const tableNameRaw = instructionTableNameRaw(programName, instruction.name);
 
   // Build arg columns (snake_case and quoted to handle reserved words)
   const argColumns = instruction.args.map((field) => {
@@ -150,13 +194,13 @@ export function generateInstructionTable(programName: string, instruction: Parse
     '    "indexed_at"            TIMESTAMPTZ DEFAULT NOW()',
   ];
 
-  const createTable = `CREATE TABLE IF NOT EXISTS ${tableName} (\n${columns.join(',\n')}\n);`;
+  const createTable = `CREATE TABLE IF NOT EXISTS ${tableNameQuoted} (\n${columns.join(',\n')}\n);`;
 
   const indexes = [
-    `CREATE INDEX IF NOT EXISTS idx_${tableName}_slot ON ${tableName}("slot");`,
-    `CREATE INDEX IF NOT EXISTS idx_${tableName}_tx ON ${tableName}("tx_signature");`,
-    `CREATE INDEX IF NOT EXISTS idx_${tableName}_block_time ON ${tableName}("block_time");`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS uq_${tableName}_tx ON ${tableName}("tx_signature", "ix_index");`,
+    `CREATE INDEX IF NOT EXISTS idx_${tableNameRaw}_slot ON ${tableNameQuoted}("slot");`,
+    `CREATE INDEX IF NOT EXISTS idx_${tableNameRaw}_tx ON ${tableNameQuoted}("tx_signature");`,
+    `CREATE INDEX IF NOT EXISTS idx_${tableNameRaw}_block_time ON ${tableNameQuoted}("block_time");`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS uq_${tableNameRaw}_tx ON ${tableNameQuoted}("tx_signature", "ix_index");`,
   ];
 
   return [createTable, '', ...indexes].join('\n');
@@ -221,7 +265,7 @@ export function generateUserSchemaDDL(
   const ddl: string[] = [];
 
   // Set search_path for this schema
-  ddl.push(`SET search_path TO ${schemaName}, public`);
+  ddl.push(`SET search_path TO ${quoteIdent(schemaName)}, public`);
 
   // Always include metadata table
   ddl.push(generateMetadataTable());
