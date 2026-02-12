@@ -155,7 +155,7 @@ export function ViewWizard() {
     const defaultAgg = groupByFields.length > 0 && !groupByFields.includes(defaultField) ? '$count' : 'value';
     setSelectColumns((prev) => [
       ...prev,
-      { alias: '', field: defaultField, aggregate: defaultAgg },
+      { alias: defaultField, field: defaultField, aggregate: defaultAgg },
     ]);
   };
 
@@ -164,6 +164,10 @@ export function ViewWizard() {
       prev.map((col, i) => {
         if (i !== index) return col;
         const updated = { ...col, ...updates };
+        // Auto-populate alias when field changes, if alias is empty or matches the previous field name
+        if (updates.field && (col.alias === '' || col.alias === col.field)) {
+          updated.alias = updates.field;
+        }
         // If field changed to one not in GROUP BY and aggregate is 'value', switch to $count
         if (updates.field && groupByFields.length > 0 && !groupByFields.includes(updates.field) && updated.aggregate === 'value') {
           updated.aggregate = '$count';

@@ -308,7 +308,11 @@ export function registerDataRoutes(app: FastifyInstance, pool: pg.Pool): void {
       const offset = Math.max(parseInt(query.offset || '0', 10), 0);
       const order = query.order === 'asc' ? 'ASC' : 'DESC';
 
-      const dataSql = `SELECT * FROM ${safeViewName} ORDER BY 1 ${order} LIMIT $1 OFFSET $2`;
+      // Validate orderBy column name (alphanumeric + underscore only)
+      const orderByCol = query.orderBy && /^[a-z_][a-z0-9_]*$/i.test(query.orderBy)
+        ? `"${query.orderBy}"`
+        : '1';
+      const dataSql = `SELECT * FROM ${safeViewName} ORDER BY ${orderByCol} ${order} LIMIT $1 OFFSET $2`;
       const countSql = `SELECT COUNT(*) as total FROM ${safeViewName}`;
 
       const [dataResult, countResult] = await Promise.all([
