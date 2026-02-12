@@ -16,7 +16,7 @@ import type { AnchorIDL } from '../core/types.js';
 /** Result of an IDL discovery attempt */
 export interface DiscoveryResult {
   found: boolean;
-  source: 'anchor-onchain' | 'manual-required';
+  source: 'anchor-onchain' | 'explorer' | 'manual-required';
   idl?: Record<string, unknown>;
   events?: Array<{
     name: string;
@@ -54,11 +54,23 @@ export class IdlDiscoveryService {
       };
     }
 
-    // 2. Not found on-chain
+    // 2. Try Solana Explorer API
+    const explorerIdl = await this.tryExplorerApi(programId);
+    if (explorerIdl) {
+      const events = this.extractEventPreview(explorerIdl);
+      return {
+        found: true,
+        source: 'explorer',
+        idl: explorerIdl,
+        events,
+      };
+    }
+
+    // 3. Not found
     return {
       found: false,
       source: 'manual-required',
-      message: `No on-chain IDL found for this program. Some programs don't store their IDL on-chain. You can find the IDL on the program's GitHub repository or download it from explorer.solana.com/address/${programId}/anchor-program, then upload it manually.`,
+      message: `No IDL found on-chain or via Solana Explorer. You can find the IDL on the program's GitHub repository or download it from explorer.solana.com/address/${programId}/idl, then upload it manually.`,
     };
   }
 
@@ -100,6 +112,41 @@ export class IdlDiscoveryService {
       const idl = JSON.parse(decompressed.toString('utf-8')) as Record<string, unknown>;
 
       // Validate it looks like an IDL
+      if (idl.instructions || idl.events) {
+        return idl;
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  // ===========================================================================
+  // Private — Solana Explorer API Fallback
+  // ===========================================================================
+
+  /**
+   * Attempts to fetch an IDL from Solana Explorer's internal API.
+   * Explorer maintains a cache of IDLs from multiple sources (on-chain, program metadata, etc.)
+   */
+  private async tryExplorerApi(programId: string): Promise<Record<string, unknown> | null> {
+    try {
+      // Explorer uses numeric cluster values: 0 = Mainnet Beta
+      const url = `https://explorer.solana.com/api/anchor?programAddress=${programId}&cluster=0`;
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'Uho/1.0' },
+        signal: AbortSignal.timeout(15_000),
+      });
+
+      if (!response.ok) return null;
+
+      const body = await response.json() as Record<string, unknown>;
+
+      // Explorer returns { idl: {...}, error?: string }
+      const idl = body.idl as Record<string, unknown> | undefined;
+      if (!idl) return null;
+
       if (idl.instructions || idl.events) {
         return idl;
       }
