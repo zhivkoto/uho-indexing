@@ -8,7 +8,7 @@
 import type pg from 'pg';
 import type { UserView, ViewDefinition, ViewAggregate, AnchorIDL } from '../core/types.js';
 import { parseIDL, toSnakeCase } from '../core/idl-parser.js';
-import { eventTableName, quoteIdent } from '../core/schema-generator.js';
+import { eventTableName, instructionTableName, quoteIdent } from '../core/schema-generator.js';
 import { inUserSchema } from '../core/db.js';
 import { NotFoundError, ValidationError, ForbiddenError } from '../core/errors.js';
 import { FREE_TIER_LIMITS } from '../core/platform-config.js';
@@ -239,11 +239,18 @@ export class ViewService {
     const sourceEvent = parsedIdl.events.find(
       (e) => toSnakeCase(e.name) === definition.source || e.name === definition.source
     );
-    if (!sourceEvent) {
-      throw new ValidationError(`Source event '${definition.source}' not found in program IDL`);
+    const sourceInstruction = !sourceEvent
+      ? parsedIdl.instructions.find(
+          (ix) => toSnakeCase(ix.name) === definition.source || ix.name === definition.source
+        )
+      : undefined;
+    if (!sourceEvent && !sourceInstruction) {
+      throw new ValidationError(`Source event/instruction '${definition.source}' not found in program IDL`);
     }
 
-    const sourceTable = eventTableName(programName, sourceEvent.name);
+    const sourceTable = sourceEvent
+      ? eventTableName(programName, sourceEvent.name)
+      : instructionTableName(programName, sourceInstruction!.name);
     const safeName = quoteIdent(`v_${viewName.replace(/[^a-z0-9_]/g, '')}`);
 
     // Build SELECT columns
@@ -350,13 +357,23 @@ GROUP BY ${safeGroupBy.join(', ')};`;
     const sourceEvent = parsedIdl.events.find(
       (e) => toSnakeCase(e.name) === definition.source || e.name === definition.source
     );
-    if (!sourceEvent) {
-      throw new ValidationError(`Source event '${definition.source}' not found in program '${programName}'`);
+    const sourceInstruction = !sourceEvent
+      ? parsedIdl.instructions.find(
+          (ix) => toSnakeCase(ix.name) === definition.source || ix.name === definition.source
+        )
+      : undefined;
+    if (!sourceEvent && !sourceInstruction) {
+      throw new ValidationError(`Source event/instruction '${definition.source}' not found in program '${programName}'`);
     }
+
+    // Instruction tables have account columns + arg columns; event tables have field columns
+    const fieldNames = sourceEvent
+      ? sourceEvent.fields.map((f) => f.name)
+      : [...sourceInstruction!.accounts, ...sourceInstruction!.args.map((a) => a.name)];
 
     const knownFields = new Set([
       'slot', 'block_time', 'tx_signature', 'ix_index', 'inner_ix_index', 'indexed_at',
-      ...sourceEvent.fields.map((f) => f.name),
+      ...fieldNames,
     ]);
 
     // Validate groupBy fields
