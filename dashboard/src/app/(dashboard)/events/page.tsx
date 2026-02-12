@@ -47,11 +47,13 @@ function EventExplorerContent() {
 
   const eventTypes = useMemo(() => {
     if (!activeProgram) {
-      // "All Programs" — collect all events across all programs, sorted by count
+      // "All Programs" — collect only enabled events with data, sorted by count
       const allEvents = new Map<string, number>();
       for (const p of userPrograms) {
         for (const e of (p.events || [])) {
-          allEvents.set(e.name, (allEvents.get(e.name) || 0) + (e.count || 0));
+          if (e.enabled && (e.count || 0) > 0) {
+            allEvents.set(e.name, (allEvents.get(e.name) || 0) + (e.count || 0));
+          }
         }
       }
       return [...allEvents.entries()]
@@ -60,7 +62,8 @@ function EventExplorerContent() {
     }
     const program = userPrograms.find((p) => p.name === activeProgram);
     if (!program?.events) return [];
-    return [...program.events]
+    return program.events
+      .filter((e) => e.enabled && (e.count || 0) > 0)
       .sort((a, b) => (b.count || 0) - (a.count || 0))
       .map((e) => ({ value: e.name, label: e.name }));
   }, [userPrograms, activeProgram]);
