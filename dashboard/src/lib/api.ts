@@ -207,6 +207,10 @@ export async function revokeApiKey(id: string): Promise<void> {
   await fetchApi(`/api/v1/user/api-keys/${id}`, { method: 'DELETE' });
 }
 
+export async function revealApiKey(id: string): Promise<{ key: string }> {
+  return fetchApi(`/api/v1/user/api-keys/${id}/reveal`);
+}
+
 // ─── Programs ─────────────────────────────────────────────────
 export async function getPrograms(): Promise<{ data: ProgramInfo[] }> {
   return fetchApi('/api/v1/programs');

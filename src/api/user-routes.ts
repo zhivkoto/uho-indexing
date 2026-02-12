@@ -159,10 +159,10 @@ export function registerUserRoutes(
       const label = body?.label ?? '';
 
       const result = await pool.query(
-        `INSERT INTO api_keys (user_id, key_hash, key_prefix, label)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO api_keys (user_id, key_hash, key_prefix, label, key_full)
+         VALUES ($1, $2, $3, $4, $5)
          RETURNING id, created_at`,
-        [auth.userId, hash, prefix, label]
+        [auth.userId, hash, prefix, label, key]
       );
 
       return reply.status(201).send({
@@ -178,6 +178,30 @@ export function registerUserRoutes(
       }
       throw err;
     }
+  });
+
+  // -----------------------------------------------------------------------
+  // GET /api/v1/user/api-keys/:id/reveal — Reveal full API key
+  // -----------------------------------------------------------------------
+  app.get('/api/v1/user/api-keys/:id/reveal', { preHandler: jwtOnlyMiddleware }, async (request, reply) => {
+    const auth = request.authPayload!;
+    const { id } = request.params as { id: string };
+
+    const result = await pool.query(
+      `SELECT key_full FROM api_keys WHERE id = $1 AND user_id = $2 AND revoked = false`,
+      [id, auth.userId]
+    );
+
+    if (result.rows.length === 0) {
+      return reply.status(404).send(new NotFoundError('API key not found').toResponse());
+    }
+
+    const keyFull = result.rows[0].key_full;
+    if (!keyFull) {
+      return reply.status(404).send({ error: { code: 'NOT_AVAILABLE', message: 'Full key not available for keys created before this feature' } });
+    }
+
+    return { key: keyFull };
   });
 
   // -----------------------------------------------------------------------

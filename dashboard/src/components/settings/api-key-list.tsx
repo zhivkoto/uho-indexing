@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Key, Plus, Trash2, Copy, Check } from 'lucide-react';
+import { Key, Plus, Trash2, Copy, Check, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
-import { getApiKeys, createApiKey, revokeApiKey } from '@/lib/api';
+import { getApiKeys, createApiKey, revokeApiKey, revealApiKey } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -17,6 +17,8 @@ export function ApiKeyList() {
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState(false);
   const [revokeId, setRevokeId] = useState<string | null>(null);
+  const [revealedKeys, setRevealedKeys] = useState<Record<string, string>>({});
+  const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['api-keys'],
@@ -89,31 +91,78 @@ export function ApiKeyList() {
         />
       ) : (
         <div className="space-y-3">
-          {keys.map((key) => (
-            <div key={key.id} className="rounded-xl bg-[#09090B] border border-[#1E1E26] p-4 flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-sm text-[#EDEDEF]">{key.keyPrefix}</span>
-                  <span className="font-mono text-sm text-[#63637A] blur-sm select-none">{'•'.repeat(24)}</span>
-                  {key.label && (
-                    <span className="text-xs text-[#63637A]">({key.label})</span>
-                  )}
+          {keys.map((key) => {
+            const isRevealed = !!revealedKeys[key.id];
+            const fullKey = revealedKeys[key.id];
+
+            const handleReveal = async () => {
+              if (isRevealed) {
+                setRevealedKeys((prev) => { const next = { ...prev }; delete next[key.id]; return next; });
+                return;
+              }
+              try {
+                const result = await revealApiKey(key.id);
+                setRevealedKeys((prev) => ({ ...prev, [key.id]: result.key }));
+              } catch {
+                toast.error('Could not reveal key (created before this feature)');
+              }
+            };
+
+            const handleCopy = async () => {
+              const keyToCopy = fullKey || key.keyPrefix;
+              await copyToClipboard(keyToCopy);
+              setCopiedKeyId(key.id);
+              toast.success('API key copied');
+              setTimeout(() => setCopiedKeyId(null), 2000);
+            };
+
+            return (
+              <div key={key.id} className="rounded-xl bg-[#09090B] border border-[#1E1E26] p-4 flex items-center justify-between">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    {isRevealed ? (
+                      <span className="font-mono text-xs text-[#22D3EE] break-all">{fullKey}</span>
+                    ) : (
+                      <>
+                        <span className="font-mono text-sm text-[#EDEDEF]">{key.keyPrefix}</span>
+                        <span className="font-mono text-sm text-[#63637A]">{'•'.repeat(20)}</span>
+                      </>
+                    )}
+                    {key.label && (
+                      <span className="text-xs text-[#63637A] flex-shrink-0">({key.label})</span>
+                    )}
+                  </div>
+                  <div className="text-xs text-[#63637A] mt-1">
+                    Created {formatRelativeTime(key.createdAt)}
+                    {key.lastUsed && <> · Last used {formatRelativeTime(key.lastUsed)}</>}
+                  </div>
                 </div>
-                <div className="text-xs text-[#63637A] mt-1">
-                  Created {formatRelativeTime(key.createdAt)}
-                  {key.lastUsed && <> · Last used {formatRelativeTime(key.lastUsed)}</>}
-                  <span className="text-[#3A3A48]"> · Full key only shown on creation</span>
+                <div className="flex items-center gap-1.5 ml-3 flex-shrink-0">
+                  <button
+                    onClick={handleReveal}
+                    className="rounded-full w-8 h-8 flex items-center justify-center text-[#63637A] hover:text-[#EDEDEF] hover:bg-[#1C1C22] transition-colors cursor-pointer"
+                    title={isRevealed ? 'Hide key' : 'Show key'}
+                  >
+                    {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                  <button
+                    onClick={handleCopy}
+                    className="rounded-full w-8 h-8 flex items-center justify-center text-[#63637A] hover:text-[#22D3EE] hover:bg-[#1C1C22] transition-colors cursor-pointer"
+                    title="Copy key"
+                  >
+                    {copiedKeyId === key.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={() => setRevokeId(key.id)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Revoke
+                  </Button>
                 </div>
               </div>
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={() => setRevokeId(key.id)}
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Revoke
-              </Button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
