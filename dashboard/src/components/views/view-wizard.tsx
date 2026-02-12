@@ -66,28 +66,56 @@ export function ViewWizard() {
       .map((e) => ({ value: e.name, label: e.name }));
   }, [programDetail]);
 
+  // System columns present in every event/instruction table
+  const SYSTEM_FIELDS = [
+    { name: 'slot', type: 'u64' },
+    { name: 'block_time', type: 'i64' },
+    { name: 'tx_signature', type: 'string' },
+    { name: 'ix_index', type: 'u32' },
+    { name: 'inner_ix_index', type: 'u32' },
+  ];
+
   // Extract fields from the IDL for the selected event
   const eventFields = useMemo(() => {
     if (!programDetail?.idl || !selectedEvent) return [];
     const idl = programDetail.idl as Record<string, unknown>;
+
+    // Try events
     const events = (idl.events || []) as Array<{ name: string; fields?: Array<{ name: string; type: unknown }> }>;
     const found = events.find((e) => e.name === selectedEvent);
     if (found?.fields) {
-      return found.fields.map((f) => ({
-        name: f.name,
-        type: typeof f.type === 'string' ? f.type : JSON.stringify(f.type),
-      }));
+      return [
+        ...SYSTEM_FIELDS,
+        ...found.fields.map((f) => ({
+          name: f.name,
+          type: typeof f.type === 'string' ? f.type : JSON.stringify(f.type),
+        })),
+      ];
     }
-    // Also check instructions
-    const instructions = (idl.instructions || []) as Array<{ name: string; args?: Array<{ name: string; type: unknown }> }>;
+
+    // Try instructions
+    const instructions = (idl.instructions || []) as Array<{
+      name: string;
+      args?: Array<{ name: string; type: unknown }>;
+      accounts?: Array<{ name: string } | string>;
+    }>;
     const ix = instructions.find((i) => i.name === selectedEvent);
-    if (ix?.args) {
-      return ix.args.map((a) => ({
-        name: a.name,
-        type: typeof a.type === 'string' ? a.type : JSON.stringify(a.type),
-      }));
+    if (ix) {
+      const fields = [
+        ...SYSTEM_FIELDS,
+        ...(ix.args || []).map((a) => ({
+          name: a.name,
+          type: typeof a.type === 'string' ? a.type : JSON.stringify(a.type),
+        })),
+        ...(ix.accounts || []).map((acc) => ({
+          name: typeof acc === 'string' ? acc : acc.name,
+          type: 'publicKey',
+        })),
+      ];
+      return fields;
     }
-    return [];
+
+    return SYSTEM_FIELDS;
   }, [programDetail, selectedEvent]);
 
   const fieldOptions = eventFields.map((f) => ({ value: f.name, label: `${f.name} (${f.type})` }));
@@ -268,6 +296,24 @@ export function ViewWizard() {
           <p className="text-sm text-[#A0A0AB] mb-6">
             Choose fields to group by and select columns with optional aggregation.
           </p>
+
+          {/* Available Fields */}
+          <div className="mb-6 p-4 rounded-xl bg-[#09090B] border border-[#1E1E26]">
+            <span className="text-[11px] font-semibold tracking-widest uppercase text-[#63637A] block mb-2">
+              Available Fields ({eventFields.length})
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {eventFields.map((f) => (
+                <span
+                  key={f.name}
+                  className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs bg-[#16161A] border border-[#1E1E26]"
+                >
+                  <span className="font-mono text-[#EDEDEF]">{f.name}</span>
+                  <span className="text-[#63637A]">({f.type})</span>
+                </span>
+              ))}
+            </div>
+          </div>
 
           {/* Group By */}
           <div className="mb-6">
