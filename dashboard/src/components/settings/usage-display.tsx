@@ -41,11 +41,6 @@ export function UsageDisplay({ profile }: UsageDisplayProps) {
         limit={profile.usage.programLimit}
       />
       <UsageBar
-        label="Events Indexed"
-        current={profile.usage.eventsIndexed}
-        limit={profile.usage.eventLimit}
-      />
-      <UsageBar
         label="API Calls (this month)"
         current={profile.usage.apiCalls}
         limit={profile.usage.apiCallLimit}
