@@ -38,6 +38,8 @@ export class InstructionDecoder {
     const blockTime = tx.blockTime ?? null;
     const programId = this.parsedIdl.programId;
 
+    console.log(`[InstructionDecoder] Decoding tx ${txSignature.slice(0, 12)}... for ${programId.slice(0, 8)}... (${this.instructions.length} known instructions)`);
+
     const message = tx.transaction.message;
 
     // Check top-level instructions
@@ -52,6 +54,7 @@ export class InstructionDecoder {
 
       const decoded = this.decodeInstructionData(ix.data, ix.accounts.map((a: any) => a.toBase58()));
       if (decoded) {
+        console.log(`  🔧 Decoded instruction: ${decoded.instructionName}`);
         results.push({
           ...decoded,
           programId,
