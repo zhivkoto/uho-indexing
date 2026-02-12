@@ -16,7 +16,7 @@ import type { AnchorIDL } from '../core/types.js';
 /** Result of an IDL discovery attempt */
 export interface DiscoveryResult {
   found: boolean;
-  source: 'anchor-onchain' | 'solscan' | 'manual-required';
+  source: 'anchor-onchain' | 'manual-required';
   idl?: Record<string, unknown>;
   events?: Array<{
     name: string;
@@ -54,23 +54,11 @@ export class IdlDiscoveryService {
       };
     }
 
-    // 2. Try Solscan API
-    const solscanIdl = await this.trySolscan(programId);
-    if (solscanIdl) {
-      const events = this.extractEventPreview(solscanIdl);
-      return {
-        found: true,
-        source: 'solscan',
-        idl: solscanIdl,
-        events,
-      };
-    }
-
-    // 3. Not found
+    // 2. Not found on-chain
     return {
       found: false,
       source: 'manual-required',
-      message: 'IDL not found on-chain or via Solscan. Please upload manually.',
+      message: `No on-chain IDL found for this program. Some programs don't store their IDL on-chain. You can find the IDL on the program's GitHub repository or download it from explorer.solana.com/address/${programId}/anchor-program, then upload it manually.`,
     };
   }
 
@@ -112,40 +100,6 @@ export class IdlDiscoveryService {
       const idl = JSON.parse(decompressed.toString('utf-8')) as Record<string, unknown>;
 
       // Validate it looks like an IDL
-      if (idl.instructions || idl.events) {
-        return idl;
-      }
-
-      return null;
-    } catch {
-      return null;
-    }
-  }
-
-  // ===========================================================================
-  // Private — Solscan Fallback
-  // ===========================================================================
-
-  /**
-   * Attempts to fetch an IDL from Solscan's public API.
-   * This is a best-effort fallback for programs not using Anchor's on-chain IDL.
-   */
-  private async trySolscan(programId: string): Promise<Record<string, unknown> | null> {
-    try {
-      const url = `https://api.solscan.io/v2/account/anchor/idl?address=${programId}`;
-      const response = await fetch(url, {
-        headers: { 'User-Agent': 'Uho/1.0' },
-        signal: AbortSignal.timeout(10_000),
-      });
-
-      if (!response.ok) return null;
-
-      const body = await response.json() as Record<string, unknown>;
-      const data = body.data as Record<string, unknown> | undefined;
-      if (!data) return null;
-
-      // Solscan returns the IDL nested under a "data" key
-      const idl = (data.idl ?? data) as Record<string, unknown>;
       if (idl.instructions || idl.events) {
         return idl;
       }
