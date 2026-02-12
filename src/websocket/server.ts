@@ -71,7 +71,7 @@ export async function createWsServer(
   // ---------------------------------------------------------------------------
   const webhookService = new WebhookService(pool);
 
-  const pgListenerClient = await pool.connect();
+  const pgListenerClient = await connectWithRetry(pool, 5, 2000);
   await pgListenerClient.query('LISTEN uho_events');
 
   pgListenerClient.on('notification', async (msg) => {
@@ -348,6 +348,28 @@ async function validateApiKey(pool: pg.Pool, key: string): Promise<AuthPayload |
     email: row.email,
     schemaName: row.schema_name,
   };
+}
+
+/**
+ * Connects to PG with retry + exponential backoff.
+ */
+async function connectWithRetry(
+  pool: pg.Pool,
+  maxRetries: number,
+  baseDelayMs: number
+): Promise<pg.PoolClient> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await pool.connect();
+    } catch (err) {
+      console.warn(
+        `[WS] PG connect attempt ${attempt}/${maxRetries} failed: ${(err as Error).message}`
+      );
+      if (attempt === maxRetries) throw err;
+      await new Promise((r) => setTimeout(r, baseDelayMs * attempt));
+    }
+  }
+  throw new Error('Unreachable');
 }
 
 /**

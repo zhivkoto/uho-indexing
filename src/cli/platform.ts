@@ -119,8 +119,8 @@ Services: ${servicesToStart.join(', ')}
         await wsApp.close();
       });
     } catch (err) {
-      console.error(`❌ Failed to start WebSocket service: ${(err as Error).message}`);
-      process.exit(1);
+      console.error(`⚠️ WebSocket service unavailable: ${(err as Error).message}`);
+      console.error(`   API and indexer will continue without real-time subscriptions.`);
     }
   }
 
