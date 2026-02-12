@@ -152,7 +152,7 @@ export default function ViewsPage() {
         open={!!previewView}
         onClose={() => setPreviewView(null)}
         title={previewView ? `View: ${previewView.name}` : ''}
-        size="xl"
+        size="full"
       >
         {previewView && (
           <ViewFieldsAndResults
