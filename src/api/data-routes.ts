@@ -67,9 +67,9 @@ export function registerDataRoutes(app: FastifyInstance, pool: pg.Pool): void {
       }
 
       const { parseIDL } = await import('../core/idl-parser.js');
-      const { eventTableName } = await import('../core/schema-generator.js');
+      const { eventTableName, instructionTableName } = await import('../core/schema-generator.js');
 
-      // Build UNION ALL query across all enabled event tables
+      // Build UNION ALL query across all enabled event + instruction tables
       const unions: string[] = [];
       const unionParams: unknown[] = [];
       let paramIdx = 1;
@@ -79,15 +79,17 @@ export function registerDataRoutes(app: FastifyInstance, pool: pg.Pool): void {
         const parsedIdl = parseIDL(row.idl);
         const idlProgramName = parsedIdl.programName;
 
-        // Get enabled events from user_program_events
+        // Get enabled events AND instructions from user_program_events
         const eventsResult = await pool.query(
-          `SELECT event_name, event_type FROM user_program_events WHERE user_program_id = $1 AND enabled = true AND event_type = 'event'`,
+          `SELECT event_name, event_type FROM user_program_events WHERE user_program_id = $1 AND enabled = true`,
           [row.id]
         );
 
         for (const evt of eventsResult.rows) {
           if (filterEvent && evt.event_name !== filterEvent) continue;
-          const tableName = eventTableName(idlProgramName, evt.event_name);
+          const tableName = evt.event_type === 'instruction'
+            ? instructionTableName(idlProgramName, evt.event_name)
+            : eventTableName(idlProgramName, evt.event_name);
           unionParams.push(row.name, evt.event_name);
           unions.push(
             `SELECT slot, tx_signature, block_time, $${paramIdx}::text as program_name, $${paramIdx + 1}::text as event_type FROM ${tableName}`

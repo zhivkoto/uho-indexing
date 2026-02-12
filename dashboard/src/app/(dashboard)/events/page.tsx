@@ -53,26 +53,33 @@ function EventExplorerContent() {
   const hasPrograms = programs.length > 0;
 
   const eventTypes = useMemo(() => {
+    const formatLabel = (name: string, type?: string) =>
+      type === 'instruction' ? `${name} (ix)` : name;
+
     if (!activeProgram) {
-      // "All Programs" — collect only enabled events, sorted by count
-      const allEvents = new Map<string, number>();
+      // "All Programs" — collect only enabled events/instructions, sorted by count
+      const allEvents = new Map<string, { count: number; type: string }>();
       for (const p of userPrograms) {
         for (const e of (p.events || [])) {
           if (e.enabled) {
-            allEvents.set(e.name, (allEvents.get(e.name) || 0) + (e.count || 0));
+            const existing = allEvents.get(e.name);
+            allEvents.set(e.name, {
+              count: (existing?.count || 0) + (e.count || 0),
+              type: existing?.type || e.type,
+            });
           }
         }
       }
       return [...allEvents.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .map(([e]) => ({ value: e, label: e }));
+        .sort((a, b) => b[1].count - a[1].count)
+        .map(([name, info]) => ({ value: name, label: formatLabel(name, info.type) }));
     }
     const program = userPrograms.find((p) => p.name === activeProgram);
     if (!program?.events) return [];
     return program.events
       .filter((e) => e.enabled)
       .sort((a, b) => (b.count || 0) - (a.count || 0))
-      .map((e) => ({ value: e.name, label: e.name }));
+      .map((e) => ({ value: e.name, label: formatLabel(e.name, e.type) }));
   }, [userPrograms, activeProgram]);
 
   const { data: events, isLoading } = useQuery({
