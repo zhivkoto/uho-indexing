@@ -31,8 +31,42 @@ export class EventDecoder {
     this.parsedIdl = parsedIdl;
 
     // Create the Anchor BorshCoder from the raw IDL
-    // The IDL must conform to Anchor's expected structure
-    const coder = new BorshCoder(rawIdl as any);
+    // Some IDLs reference types not defined in the types array (e.g., "entry"),
+    // which causes BorshCoder to throw. We patch missing types as empty structs.
+    let patchedIdl = rawIdl;
+    try {
+      new BorshCoder(rawIdl as any);
+    } catch (err) {
+      const msg = (err as Error).message || '';
+      const match = msg.match(/Type not found: (\w+)/);
+      if (match) {
+        // Patch missing types iteratively
+        patchedIdl = JSON.parse(JSON.stringify(rawIdl));
+        const types = (patchedIdl as any).types ?? [];
+        let attempts = 0;
+        while (attempts < 10) {
+          try {
+            new BorshCoder(patchedIdl as any);
+            break;
+          } catch (retryErr) {
+            const retryMsg = (retryErr as Error).message || '';
+            const retryMatch = retryMsg.match(/Type not found: (\w+)/);
+            if (retryMatch) {
+              console.warn(`[EventDecoder] Patching missing IDL type: ${retryMatch[1]}`);
+              types.push({ name: retryMatch[1], type: { kind: 'struct', fields: [] } });
+              (patchedIdl as any).types = types;
+              attempts++;
+            } else {
+              throw retryErr;
+            }
+          }
+        }
+      } else {
+        throw err;
+      }
+    }
+
+    const coder = new BorshCoder(patchedIdl as any);
     const programId = new PublicKey(parsedIdl.programId);
     this.eventParser = new EventParser(programId, coder);
 
