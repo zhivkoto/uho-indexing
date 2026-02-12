@@ -51,7 +51,7 @@ function EventExplorerContent() {
       const allEvents = new Map<string, number>();
       for (const p of userPrograms) {
         for (const e of (p.events || [])) {
-          if (e.enabled && (e.count || 0) > 0) {
+          if (e.enabled) {
             allEvents.set(e.name, (allEvents.get(e.name) || 0) + (e.count || 0));
           }
         }
@@ -63,7 +63,7 @@ function EventExplorerContent() {
     const program = userPrograms.find((p) => p.name === activeProgram);
     if (!program?.events) return [];
     return program.events
-      .filter((e) => e.enabled && (e.count || 0) > 0)
+      .filter((e) => e.enabled)
       .sort((a, b) => (b.count || 0) - (a.count || 0))
       .map((e) => ({ value: e.name, label: e.name }));
   }, [userPrograms, activeProgram]);
