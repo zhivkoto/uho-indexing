@@ -371,32 +371,59 @@ GROUP BY ${safeGroupBy.join(', ')};`;
       ? sourceEvent.fields.map((f) => f.name)
       : [...sourceInstruction!.accounts, ...sourceInstruction!.args.map((a) => a.name)];
 
+    // Accept both camelCase (IDL) and snake_case (DB column) field names
     const knownFields = new Set([
       'slot', 'block_time', 'tx_signature', 'ix_index', 'inner_ix_index', 'indexed_at',
       ...fieldNames,
+      ...fieldNames.map((f) => toSnakeCase(f)),
     ]);
 
-    // Validate groupBy fields
+    // Normalize field to snake_case for DB; validate it exists
+    const resolveField = (field: string): string => {
+      if (knownFields.has(field)) return toSnakeCase(field);
+      const snake = toSnakeCase(field);
+      if (knownFields.has(snake)) return snake;
+      return ''; // not found
+    };
+
+    // Validate groupBy fields and normalize to snake_case
     const groupByFields = Array.isArray(definition.groupBy)
       ? definition.groupBy
       : [definition.groupBy];
     for (const field of groupByFields) {
-      if (!knownFields.has(field)) {
+      if (!resolveField(field)) {
         throw new ValidationError(`groupBy field '${field}' does not exist in event '${definition.source}'`);
       }
     }
+    // Normalize groupBy to snake_case
+    definition.groupBy = groupByFields.map((f) => resolveField(f) || f);
 
-    // Validate select expressions
+    // Validate select expressions and normalize field refs to snake_case
     for (const [, expr] of Object.entries(definition.select)) {
       if (typeof expr === 'string') {
-        if (!knownFields.has(expr)) {
+        if (!resolveField(expr)) {
           throw new ValidationError(`Select field '${expr}' does not exist in event '${definition.source}'`);
         }
       } else {
         // Validate aggregate field references
         const fieldRef = expr.$count ?? expr.$sum ?? expr.$avg ?? expr.$min ?? expr.$max ?? expr.$first ?? expr.$last;
-        if (fieldRef && fieldRef !== '*' && !knownFields.has(fieldRef)) {
+        if (fieldRef && fieldRef !== '*' && !resolveField(fieldRef)) {
           throw new ValidationError(`Aggregate field '${fieldRef}' does not exist in event '${definition.source}'`);
+        }
+      }
+    }
+    // Normalize select field refs to snake_case
+    for (const [alias, expr] of Object.entries(definition.select)) {
+      if (typeof expr === 'string') {
+        definition.select[alias] = resolveField(expr) || expr;
+      } else {
+        const aggKey = (['$count', '$sum', '$avg', '$min', '$max', '$first', '$last'] as const)
+          .find((k) => (expr as Record<string, unknown>)[k]);
+        if (aggKey) {
+          const val = (expr as Record<string, string>)[aggKey];
+          if (val && val !== '*') {
+            (expr as Record<string, string>)[aggKey] = resolveField(val) || val;
+          }
         }
       }
     }
