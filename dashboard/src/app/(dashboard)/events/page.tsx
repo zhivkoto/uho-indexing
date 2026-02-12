@@ -36,18 +36,25 @@ function EventExplorerContent() {
 
   const userPrograms = programsData?.data || [];
 
-  const programs = useMemo(
-    () => userPrograms.map((p) => ({ value: p.name, label: p.name })),
-    [userPrograms]
-  );
-
   // Empty string = "All Programs" / "All Events" — uses /data/all endpoint
   const activeProgram = selectedProgram !== '' ? selectedProgram : (initialProgram || '');
+  const activeEvent = selectedEvent !== '' ? selectedEvent : (initialEvent || '');
+
+  // Filter program dropdown: if an event is selected, only show programs that have it
+  const programs = useMemo(() => {
+    if (!activeEvent) {
+      return userPrograms.map((p) => ({ value: p.name, label: p.name }));
+    }
+    return userPrograms
+      .filter((p) => p.events?.some((e) => e.enabled && e.name === activeEvent))
+      .map((p) => ({ value: p.name, label: p.name }));
+  }, [userPrograms, activeEvent]);
+
   const hasPrograms = programs.length > 0;
 
   const eventTypes = useMemo(() => {
     if (!activeProgram) {
-      // "All Programs" — collect only enabled events with data, sorted by count
+      // "All Programs" — collect only enabled events, sorted by count
       const allEvents = new Map<string, number>();
       for (const p of userPrograms) {
         for (const e of (p.events || [])) {
@@ -67,8 +74,6 @@ function EventExplorerContent() {
       .sort((a, b) => (b.count || 0) - (a.count || 0))
       .map((e) => ({ value: e.name, label: e.name }));
   }, [userPrograms, activeProgram]);
-
-  const activeEvent = selectedEvent !== '' ? selectedEvent : (initialEvent || '');
 
   const { data: events, isLoading } = useQuery({
     queryKey: ['events', activeProgram, activeEvent, page, sorting, slotFrom, slotTo],
@@ -117,7 +122,19 @@ function EventExplorerContent() {
         slotFrom={slotFrom}
         slotTo={slotTo}
         onProgramChange={(v) => { setSelectedProgram(v); setSelectedEvent(''); setPage(0); }}
-        onEventChange={(v) => { setSelectedEvent(v); setPage(0); }}
+        onEventChange={(v) => {
+          setSelectedEvent(v);
+          setPage(0);
+          // Auto-select program if only one program has this event
+          if (v) {
+            const matching = userPrograms.filter((p) =>
+              p.events?.some((e) => e.enabled && e.name === v)
+            );
+            if (matching.length === 1) {
+              setSelectedProgram(matching[0].name);
+            }
+          }
+        }}
         onSearchChange={setSearch}
         onSlotFromChange={(v) => { setSlotFrom(v); setPage(0); }}
         onSlotToChange={(v) => { setSlotTo(v); setPage(0); }}
