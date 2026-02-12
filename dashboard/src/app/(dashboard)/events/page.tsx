@@ -39,19 +39,33 @@ function EventExplorerContent() {
     [status]
   );
 
-  const activeProgram = selectedProgram || programs[0]?.value || '';
+  // Empty string = "All Programs" / "All Events" — uses /data/all endpoint
+  const activeProgram = selectedProgram !== '' ? selectedProgram : (initialProgram || '');
+  const hasPrograms = programs.length > 0;
 
   const eventTypes = useMemo(() => {
+    if (!activeProgram) {
+      // "All Programs" — collect all events across all programs, sorted by count
+      const allEvents = new Map<string, number>();
+      for (const p of (status?.programs || [])) {
+        const counts = p.eventCounts || {};
+        for (const e of (p.events || [])) {
+          allEvents.set(e, (allEvents.get(e) || 0) + (counts[e] || 0));
+        }
+      }
+      return [...allEvents.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([e]) => ({ value: e, label: e }));
+    }
     const program = status?.programs?.find((p) => p.name === activeProgram);
     if (!program?.events) return [];
-    // Sort events by count descending so the one with most data is first
     const counts = program.eventCounts || {};
     return [...program.events]
       .sort((a, b) => (counts[b] || 0) - (counts[a] || 0))
       .map((e) => ({ value: e, label: e }));
   }, [status, activeProgram]);
 
-  const activeEvent = selectedEvent || eventTypes[0]?.value || '';
+  const activeEvent = selectedEvent !== '' ? selectedEvent : (initialEvent || '');
 
   const { data: events, isLoading } = useQuery({
     queryKey: ['events', activeProgram, activeEvent, page, sorting, slotFrom, slotTo],
@@ -64,7 +78,7 @@ function EventExplorerContent() {
         slotFrom: slotFrom ? Number(slotFrom) : undefined,
         slotTo: slotTo ? Number(slotTo) : undefined,
       }),
-    enabled: !!activeProgram && !!activeEvent,
+    enabled: hasPrograms,
     refetchInterval: 5000,
     retry: 1,
   });

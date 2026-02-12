@@ -295,6 +295,15 @@ export async function getEvents(
       }
     });
   }
+
+  // Use /data/all endpoint when program or event is empty (All Programs / All Events)
+  if (!program || !event) {
+    if (program) searchParams.set('program', program);
+    if (event) searchParams.set('event', event);
+    const qs = searchParams.toString();
+    return fetchApi(`/api/v1/data/all${qs ? `?${qs}` : ''}`);
+  }
+
   const qs = searchParams.toString();
   return fetchApi(`/api/v1/data/${program}/${event}${qs ? `?${qs}` : ''}`);
 }

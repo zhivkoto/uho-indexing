@@ -39,6 +39,85 @@ export function registerDataRoutes(app: FastifyInstance, pool: pg.Pool): void {
   const preHandlers = [authMiddleware, schemaMiddleware];
 
   // -----------------------------------------------------------------------
+  // GET /api/v1/data/all — List all events across all programs (paginated)
+  //
+  // Supports optional ?program=name filter and ?event=name filter.
+  // Returns a unified view with event_type and program_name columns.
+  // -----------------------------------------------------------------------
+  app.get('/api/v1/data/all', { preHandler: preHandlers }, async (request, reply) => {
+    const auth = request.authPayload!;
+    const client = request.schemaClient!;
+    const query = request.query as Record<string, string>;
+
+    const limit = Math.min(Math.max(parseInt(query.limit || '50', 10), 1), 1000);
+    const offset = Math.max(parseInt(query.offset || '0', 10), 0);
+    const order = query.order === 'asc' ? 'ASC' : 'DESC';
+    const filterProgram = query.program || '';
+    const filterEvent = query.event || '';
+
+    try {
+      // Get all user programs
+      const programsResult = await pool.query(
+        `SELECT id, name, program_id, idl FROM user_programs WHERE user_id = $1 AND status != 'archived'`,
+        [auth.userId]
+      );
+
+      if (programsResult.rows.length === 0) {
+        return { data: [], pagination: { limit, offset, total: 0 } };
+      }
+
+      const { parseIDL } = await import('../core/idl-parser.js');
+      const { eventTableName } = await import('../core/schema-generator.js');
+
+      // Build UNION ALL query across all enabled event tables
+      const unions: string[] = [];
+      for (const row of programsResult.rows) {
+        if (filterProgram && row.name !== filterProgram) continue;
+
+        const parsedIdl = parseIDL(row.idl);
+        const idlProgramName = parsedIdl.programName;
+
+        // Get enabled events from user_program_events
+        const eventsResult = await pool.query(
+          `SELECT event_name, event_type FROM user_program_events WHERE user_program_id = $1 AND enabled = true AND event_type = 'event'`,
+          [row.id]
+        );
+
+        for (const evt of eventsResult.rows) {
+          if (filterEvent && evt.event_name !== filterEvent) continue;
+          const tableName = eventTableName(idlProgramName, evt.event_name);
+          unions.push(
+            `SELECT slot, tx_signature, block_time, '${row.name.replace(/'/g, "''")}' as program_name, '${evt.event_name.replace(/'/g, "''")}' as event_type FROM ${tableName}`
+          );
+        }
+      }
+
+      if (unions.length === 0) {
+        return { data: [], pagination: { limit, offset, total: 0 } };
+      }
+
+      const unionSql = unions.join(' UNION ALL ');
+      const dataSql = `SELECT * FROM (${unionSql}) combined ORDER BY slot ${order} LIMIT $1 OFFSET $2`;
+      const dataResult = await client.query(dataSql, [limit, offset]);
+
+      // Count total
+      const countSql = `SELECT COUNT(*)::int as count FROM (${unionSql}) combined`;
+      const countResult = await client.query(countSql);
+      const total = countResult.rows[0]?.count ?? 0;
+
+      return {
+        data: dataResult.rows,
+        pagination: { limit, offset, total },
+      };
+    } catch (err) {
+      console.error('[Data/all] Error:', (err as Error).message);
+      return reply.status(500).send({
+        error: { code: 'INTERNAL_ERROR', message: 'Failed to query events' },
+      });
+    }
+  });
+
+  // -----------------------------------------------------------------------
   // GET /api/v1/data/:program/:event — List events (paginated, filterable)
   //
   // S1.2: Field-level filtering — ?field=value, ?field_gte=N, ?field_lte=N
