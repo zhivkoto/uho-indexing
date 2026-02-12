@@ -133,7 +133,7 @@ export class ProgramService {
   /**
    * Lists all programs for a user with event information.
    */
-  async listPrograms(userId: string): Promise<(UserProgramWithEvents & { eventsIndexed: number })[]> {
+  async listPrograms(userId: string): Promise<(UserProgramWithEvents & { eventsIndexed: number; lastSlot: number })[]> {
     const result = await this.pool.query(
       `SELECT * FROM user_programs WHERE user_id = $1 AND status != 'archived' ORDER BY created_at DESC`,
       [userId]
@@ -148,24 +148,26 @@ export class ProgramService {
       const program = this.mapProgramRow(row);
       const events = await this.getProgramEvents(program.id, schemaName, program.name);
       
-      // Fetch events_indexed from user schema
+      // Fetch events_indexed and last_slot from user schema
       let eventsIndexed = 0;
+      let lastSlot = 0;
       if (schemaName) {
         try {
-          const countResult = await inUserSchema(this.pool, schemaName, async (client) => {
-            const stateResult = await client.query(
-              'SELECT events_indexed FROM _uho_state WHERE program_id = $1',
+          const stateResult = await inUserSchema(this.pool, schemaName, async (client) => {
+            const res = await client.query(
+              'SELECT events_indexed, last_slot FROM _uho_state WHERE program_id = $1',
               [program.programId]
             );
-            return stateResult.rows[0]?.events_indexed ?? 0;
+            return res.rows[0];
           });
-          eventsIndexed = Number(countResult);
+          eventsIndexed = Number(stateResult?.events_indexed ?? 0);
+          lastSlot = Number(stateResult?.last_slot ?? 0);
         } catch {
           // Schema or table might not exist yet
         }
       }
       
-      programs.push({ ...program, events, eventsIndexed });
+      programs.push({ ...program, events, eventsIndexed, lastSlot });
     }
 
     return programs;

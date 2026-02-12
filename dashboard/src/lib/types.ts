@@ -147,6 +147,7 @@ export interface ProgramInfo {
   status: ProgramStatusValue;
   events: ProgramEventInfo[];
   eventsIndexed?: number;
+  lastSlot?: number;
   config: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;

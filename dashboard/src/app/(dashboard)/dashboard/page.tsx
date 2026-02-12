@@ -29,7 +29,7 @@ export default function DashboardPage() {
     const counts = p.events?.reduce((a, e) => a + (e.count || 0), 0) || 0;
     return sum + (p.eventsIndexed || counts);
   }, 0);
-  const lastSlot = 0; // Per-program slots shown on program cards
+  const lastSlot = userPrograms.reduce((max, p) => Math.max(max, p.lastSlot || 0), 0);
 
   // Convert ProgramInfo[] to ProgramStatus[] for dashboard widgets
   const statusPrograms: ProgramStatus[] = userPrograms.map((p) => ({
