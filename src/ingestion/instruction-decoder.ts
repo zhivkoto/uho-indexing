@@ -43,13 +43,19 @@ export class InstructionDecoder {
     const message = tx.transaction.message;
 
     // Check top-level instructions
+    // DEBUG: log instruction shape for first tx of each program
+    if (message.instructions.length > 0) {
+      const sample = message.instructions.map((ix: any, idx: number) => {
+        const hasData = 'data' in ix;
+        const pid = ix.programId?.toBase58?.() ?? ix.program ?? '?';
+        return `ix${idx}:${pid.slice(0,8)}${hasData ? '+data' : ''}`;
+      }).join(', ');
+      console.log(`[IxDec] ${programId.slice(0,8)}: ${message.instructions.length} ixs [${sample}]`);
+    }
     for (let i = 0; i < message.instructions.length; i++) {
       const ix = message.instructions[i];
 
-      // For parsed transactions, instructions can be either PartiallyDecodedInstruction
-      // (with `data` as base58 string and `accounts` as PublicKey[]) or ParsedInstruction
-      // (already decoded by the RPC). We want the raw ones.
-      if (!('data' in ix)) continue; // Skip fully-parsed instructions (e.g., system program)
+      if (!('data' in ix)) continue;
       if (!ix.programId || !ix.data || !ix.accounts) continue;
       const ixPid = ix.programId.toBase58();
       if (ixPid !== programId) continue;
