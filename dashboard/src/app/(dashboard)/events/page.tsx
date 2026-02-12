@@ -25,7 +25,7 @@ function EventExplorerContent() {
   const [slotFrom, setSlotFrom] = useState('');
   const [slotTo, setSlotTo] = useState('');
   const [page, setPage] = useState(0);
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const [sorting, setSorting] = useState<SortingState>([{ id: 'slot', desc: true }]);
 
   const { data: status } = useQuery({
     queryKey: ['status'],

@@ -74,9 +74,14 @@ export function EventTable({
     if (!data.length) return [];
 
     // Determine columns from data keys
+    const hiddenColumns = new Set(['id', 'inner_ix_index', 'innerIxIndex']);
     const sampleKeys = Object.keys(data[0]).filter(
-      (k) => !k.startsWith('_') && k !== 'id'
-    );
+      (k) => !k.startsWith('_') && !hiddenColumns.has(k)
+    ).filter((k) => {
+      // Hide columns that are null in all sample rows (check first 5)
+      const samples = data.slice(0, 5);
+      return samples.some((row) => row[k] != null);
+    });
 
     // Priority columns first
     const priority = ['slot', 'txSignature', 'tx_signature', 'signature', 'eventType', 'event_type', 'timestamp', 'blockTime', 'block_time'];
