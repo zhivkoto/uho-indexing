@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { ArrowLeft, ExternalLink, Copy, Check, Search } from 'lucide-react';
 import { useState } from 'react';
-import { getStatus, getEventByTx } from '@/lib/api';
+import { getPrograms, getEventByTx } from '@/lib/api';
 import { PageContainer } from '@/components/layout/page-container';
 import { Card } from '@/components/ui/card';
 import { Badge, EventTag } from '@/components/ui/badge';
@@ -48,14 +48,16 @@ export default function EventDetailPage() {
   const qsProgram = searchParams.get('program') || '';
   const qsEvent = searchParams.get('event') || '';
 
-  const { data: status } = useQuery({
-    queryKey: ['status'],
-    queryFn: getStatus,
+  const { data: programsData } = useQuery({
+    queryKey: ['programs'],
+    queryFn: getPrograms,
     retry: 1,
   });
 
-  const programName = qsProgram || status?.programs?.[0]?.name;
-  const eventName = qsEvent || status?.programs?.find(p => p.name === programName)?.events?.[0];
+  const userPrograms = programsData?.data || [];
+  const programName = qsProgram || userPrograms[0]?.name;
+  const matchedProgram = userPrograms.find(p => p.name === programName);
+  const eventName = qsEvent || matchedProgram?.events?.find(e => e.enabled)?.name;
 
   const { data: eventData, isLoading, error } = useQuery({
     queryKey: ['event-detail', programName, eventName, txSignature],

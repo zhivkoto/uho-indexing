@@ -93,13 +93,19 @@ export function EventTable({
     return sortedKeys.slice(0, 8).map((key) => ({
       accessorKey: key,
       header: key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim(),
-      cell: ({ getValue }) => {
+      cell: ({ getValue, row }) => {
         const val = getValue();
+        const rowData = row.original as Record<string, unknown>;
 
         // Special rendering for known columns
         if ((key === 'txSignature' || key === 'tx_signature' || key === 'signature') && typeof val === 'string') {
+          const linkProgram = program || rowData.program_name || '';
+          const linkEvent = event || rowData.event_type || '';
           return (
-            <Link href={`/events/${val}?program=${program}&event=${event}`} className="font-mono text-[13px] text-[#67E8F9] hover:underline">
+            <Link
+              href={`/events/${val}?program=${linkProgram}&event=${linkEvent}`}
+              className="font-mono text-[13px] text-[#67E8F9] hover:underline"
+            >
               {truncateAddress(val, 4)}
             </Link>
           );
