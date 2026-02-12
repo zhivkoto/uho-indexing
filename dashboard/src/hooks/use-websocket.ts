@@ -3,7 +3,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { getAccessToken } from '@/lib/auth';
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3012';
+// Derive WebSocket URL from API URL if not explicitly set
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || (() => {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3010';
+  const isSecure = apiUrl.startsWith('https://');
+  const host = apiUrl.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  return `${isSecure ? 'wss' : 'ws'}://${host}`;
+})();
 
 // ─── Types ────────────────────────────────────────────────────
 
