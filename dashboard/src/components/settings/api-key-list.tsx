@@ -109,7 +109,17 @@ export function ApiKeyList() {
             };
 
             const handleCopy = async () => {
-              const keyToCopy = fullKey || key.keyPrefix;
+              let keyToCopy = fullKey;
+              if (!keyToCopy) {
+                try {
+                  const result = await revealApiKey(key.id);
+                  keyToCopy = result.key;
+                  setRevealedKeys((prev) => ({ ...prev, [key.id]: result.key }));
+                } catch {
+                  toast.error('Could not copy key');
+                  return;
+                }
+              }
               await copyToClipboard(keyToCopy);
               setCopiedKeyId(key.id);
               toast.success('API key copied');
@@ -175,12 +185,9 @@ export function ApiKeyList() {
       >
         {createdKey ? (
           <div className="space-y-4">
-            <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-900/20 border border-amber-500/20">
-              <span className="text-amber-400 text-sm">⚠️</span>
-              <p className="text-sm text-amber-300 font-medium">
-                Copy this key now — it won&apos;t be shown again!
-              </p>
-            </div>
+            <p className="text-sm text-[#A0A0AB]">
+              Your new API key is ready. You can always reveal it later in Settings.
+            </p>
             <div className="flex items-center gap-2 p-3 rounded-xl bg-[#09090B] border border-[#1E1E26]">
               <code className="font-mono text-xs text-[#22D3EE] flex-1 break-all">{createdKey}</code>
               <button onClick={handleCopyKey} className="text-[#63637A] hover:text-[#22D3EE] transition-colors flex-shrink-0">
