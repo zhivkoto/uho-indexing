@@ -193,6 +193,11 @@ export class IndexerOrchestrator {
         poller.setLastSignature(maxState);
       }
 
+      // Ensure parsedIdl has the correct programId (some IDLs lack `address`)
+      if (!parsedIdl.programId) {
+        parsedIdl.programId = programId;
+      }
+
       const decoder = new EventDecoder(parsedIdl, canonicalSub.rawIdl as unknown as AnchorIDL);
       // Create instruction decoder if the IDL has instructions
       const instructionDecoder = parsedIdl.instructions.length > 0
@@ -235,7 +240,6 @@ export class IndexerOrchestrator {
         try {
           const txs = await program.poller.poll();
           if (txs.length > 0) {
-            console.log(`[Orchestrator] Polled ${txs.length} txs for ${program.programId.slice(0, 8)}...`);
             const events: DecodedEvent[] = [];
             const instructions: DecodedInstruction[] = [];
             for (const tx of txs) {
@@ -245,7 +249,6 @@ export class IndexerOrchestrator {
               }
             }
 
-            console.log(`[Orchestrator] ${program.programId.slice(0, 8)}...: ${events.length} events, ${instructions.length} instructions`);
             if (events.length > 0 || instructions.length > 0) {
               await program.fanoutWriter.writeToSubscribers(
                 program.programId,

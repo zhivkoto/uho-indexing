@@ -43,15 +43,6 @@ export class InstructionDecoder {
     const message = tx.transaction.message;
 
     // Check top-level instructions
-    // DEBUG: log instruction shape for first tx of each program
-    if (message.instructions.length > 0) {
-      const sample = message.instructions.map((ix: any, idx: number) => {
-        const hasData = 'data' in ix;
-        const pid = ix.programId?.toBase58?.() ?? ix.program ?? '?';
-        return `ix${idx}:${pid.slice(0,8)}${hasData ? '+data' : ''}`;
-      }).join(', ');
-      console.log(`[IxDec] ${programId.slice(0,8)}: ${message.instructions.length} ixs [${sample}]`);
-    }
     for (let i = 0; i < message.instructions.length; i++) {
       const ix = message.instructions[i];
 
@@ -62,7 +53,6 @@ export class InstructionDecoder {
 
       const decoded = this.decodeInstructionData(ix.data, ix.accounts.map((a: any) => a.toBase58?.() ?? String(a)));
       if (decoded) {
-        console.log(`  🔧 Decoded instruction: ${decoded.instructionName} (slot ${slot})`);
         results.push({
           ...decoded,
           programId,
@@ -71,8 +61,6 @@ export class InstructionDecoder {
           txSignature,
           ixIndex: i,
         });
-      } else {
-        console.log(`  ❓ No disc match for ${programId.slice(0,8)}... data[0..8] from tx ${txSignature?.slice(0,12)}`);
       }
     }
 
