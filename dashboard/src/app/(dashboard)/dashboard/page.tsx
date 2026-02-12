@@ -50,7 +50,7 @@ export default function DashboardPage() {
           />
           <StatCard
             label="Last Slot Indexed"
-            value={isLoading ? '—' : lastSlot ? formatSlot(lastSlot, false) : '—'}
+            value={isLoading ? '—' : lastSlot ? String(lastSlot) : '—'}
             icon={<Hash className="w-4 h-4" />}
             loading={isLoading}
           />

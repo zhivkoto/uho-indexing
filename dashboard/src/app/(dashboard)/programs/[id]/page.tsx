@@ -171,7 +171,7 @@ export default function ProgramDetailPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           <StatCard label="Events Indexed" value={formatNumber(program.state?.eventsIndexed || totalEvents, true)} />
           <StatCard label="Event Types" value={String(program.events.filter(e => e.enabled).length)} />
-          <StatCard label="Last Slot" value={program.state?.lastSlot ? formatSlot(program.state.lastSlot, false) : '—'} />
+          <StatCard label="Last Slot" value={program.state?.lastSlot ? String(program.state.lastSlot) : '—'} />
           <StatCard label="Last Poll" value={program.state?.lastPollAt ? formatRelativeTime(program.state.lastPollAt) : '—'} />
         </div>
 
