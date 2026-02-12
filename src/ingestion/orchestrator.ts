@@ -235,6 +235,7 @@ export class IndexerOrchestrator {
         try {
           const txs = await program.poller.poll();
           if (txs.length > 0) {
+            console.log(`[Orchestrator] Polled ${txs.length} txs for ${program.programId.slice(0, 8)}...`);
             const events: DecodedEvent[] = [];
             const instructions: DecodedInstruction[] = [];
             for (const tx of txs) {
@@ -244,6 +245,7 @@ export class IndexerOrchestrator {
               }
             }
 
+            console.log(`[Orchestrator] ${program.programId.slice(0, 8)}...: ${events.length} events, ${instructions.length} instructions`);
             if (events.length > 0 || instructions.length > 0) {
               await program.fanoutWriter.writeToSubscribers(
                 program.programId,
