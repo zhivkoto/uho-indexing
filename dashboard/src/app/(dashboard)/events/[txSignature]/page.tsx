@@ -97,7 +97,7 @@ export default function EventDetailPage() {
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
                 <EventTag className="text-sm px-3 py-1">
-                  {String(mainEvent.eventType || mainEvent.event_type || firstEvent || 'Event')}
+                  {String(mainEvent.eventType || mainEvent.event_type || eventName || 'Event')}
                 </EventTag>
                 <Badge variant="success" dot>Confirmed</Badge>
               </div>
