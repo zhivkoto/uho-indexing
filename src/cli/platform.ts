@@ -77,6 +77,14 @@ export async function platformStartCommand(options: PlatformStartOptions): Promi
   }
 
   const pool = createPoolFromUrl(config.databaseUrl);
+
+  // Auto-run migrations on startup
+  try {
+    await runMigrations(pool);
+  } catch (migErr) {
+    console.error(`⚠️ Migration warning: ${(migErr as Error).message}`);
+  }
+
   const servicesToStart = options.service ? [options.service] : (['api', 'indexer', 'ws'] as ServiceName[]);
 
   console.log(`
