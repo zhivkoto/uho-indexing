@@ -94,6 +94,7 @@ export function ApiKeyList() {
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-sm text-[#EDEDEF]">{key.keyPrefix}</span>
+                  <span className="font-mono text-sm text-[#63637A] blur-sm select-none">{'•'.repeat(24)}</span>
                   {key.label && (
                     <span className="text-xs text-[#63637A]">({key.label})</span>
                   )}
@@ -101,6 +102,7 @@ export function ApiKeyList() {
                 <div className="text-xs text-[#63637A] mt-1">
                   Created {formatRelativeTime(key.createdAt)}
                   {key.lastUsed && <> · Last used {formatRelativeTime(key.lastUsed)}</>}
+                  <span className="text-[#3A3A48]"> · Full key only shown on creation</span>
                 </div>
               </div>
               <Button
@@ -124,9 +126,12 @@ export function ApiKeyList() {
       >
         {createdKey ? (
           <div className="space-y-4">
-            <p className="text-sm text-[#A0A0AB]">
-              Copy this key now. It won&apos;t be shown again.
-            </p>
+            <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-900/20 border border-amber-500/20">
+              <span className="text-amber-400 text-sm">⚠️</span>
+              <p className="text-sm text-amber-300 font-medium">
+                Copy this key now — it won&apos;t be shown again!
+              </p>
+            </div>
             <div className="flex items-center gap-2 p-3 rounded-xl bg-[#09090B] border border-[#1E1E26]">
               <code className="font-mono text-xs text-[#22D3EE] flex-1 break-all">{createdKey}</code>
               <button onClick={handleCopyKey} className="text-[#63637A] hover:text-[#22D3EE] transition-colors flex-shrink-0">
