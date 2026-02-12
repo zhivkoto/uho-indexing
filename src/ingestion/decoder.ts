@@ -16,7 +16,7 @@ import type { AnchorIDL, ParsedIDL, DecodedEvent, ParsedEvent } from '../core/ty
 
 export class EventDecoder {
   private parsedIdl: ParsedIDL;
-  private eventParser: EventParser;
+  private eventParser: EventParser | null;
   private eventNames: Set<string>;
   private debugCount?: number;
 
@@ -31,44 +31,52 @@ export class EventDecoder {
     this.parsedIdl = parsedIdl;
 
     // Create the Anchor BorshCoder from the raw IDL
-    // Some IDLs reference types not defined in the types array (e.g., "entry"),
-    // which causes BorshCoder to throw. We patch missing types as empty structs.
-    let patchedIdl = rawIdl;
+    // Some IDLs have format mismatches (e.g., old-style `defined: "TypeName"` vs
+    // new-style `defined: {name: "TypeName"}`), or reference types not in the types array.
+    // We try to patch, but if BorshCoder still fails, create a no-op event parser
+    // so the program can still be added for instruction-only indexing.
+    let eventParser: EventParser | null = null;
     try {
-      new BorshCoder(rawIdl as any);
-    } catch (err) {
-      const msg = (err as Error).message || '';
-      const match = msg.match(/Type not found: (\w+)/);
-      if (match) {
-        // Patch missing types iteratively
-        patchedIdl = JSON.parse(JSON.stringify(rawIdl));
-        const types = (patchedIdl as any).types ?? [];
-        let attempts = 0;
-        while (attempts < 10) {
-          try {
-            new BorshCoder(patchedIdl as any);
-            break;
-          } catch (retryErr) {
-            const retryMsg = (retryErr as Error).message || '';
-            const retryMatch = retryMsg.match(/Type not found: (\w+)/);
-            if (retryMatch) {
-              console.warn(`[EventDecoder] Patching missing IDL type: ${retryMatch[1]}`);
-              types.push({ name: retryMatch[1], type: { kind: 'struct', fields: [] } });
-              (patchedIdl as any).types = types;
-              attempts++;
-            } else {
-              throw retryErr;
+      let patchedIdl = rawIdl;
+      try {
+        new BorshCoder(rawIdl as any);
+      } catch (err) {
+        const msg = (err as Error).message || '';
+        if (msg.includes('Type not found')) {
+          // Patch missing types iteratively
+          patchedIdl = JSON.parse(JSON.stringify(rawIdl));
+          const types = (patchedIdl as any).types ?? [];
+          const seen = new Set<string>();
+          let attempts = 0;
+          while (attempts < 10) {
+            try {
+              new BorshCoder(patchedIdl as any);
+              break;
+            } catch (retryErr) {
+              const retryMsg = (retryErr as Error).message || '';
+              const retryMatch = retryMsg.match(/Type not found: (\w+)/);
+              if (retryMatch && !seen.has(retryMatch[1])) {
+                console.warn(`[EventDecoder] Patching missing IDL type: ${retryMatch[1]}`);
+                types.push({ name: retryMatch[1], type: { kind: 'struct', fields: [] } });
+                (patchedIdl as any).types = types;
+                seen.add(retryMatch[1]);
+                attempts++;
+              } else {
+                throw retryErr;
+              }
             }
           }
+        } else {
+          throw err;
         }
-      } else {
-        throw err;
       }
+      const coder = new BorshCoder(patchedIdl as any);
+      eventParser = new EventParser(new PublicKey(parsedIdl.programId), coder);
+    } catch (err) {
+      console.warn(`[EventDecoder] BorshCoder failed for ${parsedIdl.programName}, event decoding disabled: ${(err as Error).message}`);
     }
 
-    const coder = new BorshCoder(patchedIdl as any);
-    const programId = new PublicKey(parsedIdl.programId);
-    this.eventParser = new EventParser(programId, coder);
+    this.eventParser = eventParser;
 
     // Track known event names for quick lookup
     this.eventNames = new Set(parsedIdl.events.map((e) => e.name));
@@ -107,6 +115,7 @@ export class EventDecoder {
 
     try {
       // Use Anchor's EventParser to parse events from logs
+      if (!this.eventParser) return events;
       const parsedEvents = this.eventParser.parseLogs(logs);
 
       for (const event of parsedEvents) {
