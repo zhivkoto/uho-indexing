@@ -43,7 +43,7 @@ export class FanoutWriter {
           sub.enabledEvents.includes(e.eventName)
         );
         const enabledInstructions = instructions.filter((ix) =>
-          sub.enabledInstructions.includes(ix.name)
+          sub.enabledInstructions.includes(ix.instructionName)
         );
 
         if (enabledEvents.length === 0 && enabledInstructions.length === 0) continue;

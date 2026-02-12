@@ -72,6 +72,32 @@ export function computeEventDiscriminator(eventName: string): Buffer {
   return Buffer.from(hash.subarray(0, 8));
 }
 
+/**
+ * Computes the Anchor instruction discriminator (sighash) for IDLs that don't include it.
+ * Formula: sha256("global:{instruction_name}")[0..8]
+ * Uses the camelCase name as-is from the IDL (Anchor convention).
+ */
+export function computeInstructionDiscriminator(ixName: string): Buffer {
+  const hash = createHash('sha256').update(`global:${toSnakeCase(ixName)}`).digest();
+  return Buffer.from(hash.subarray(0, 8));
+}
+
+/**
+ * Flattens nested Anchor account definitions into a flat list of account names.
+ * Handles both simple accounts ({name}) and nested groups ({name, accounts: [...]}).
+ */
+function flattenAccounts(accounts: any[]): string[] {
+  const result: string[] = [];
+  for (const acc of accounts) {
+    if (acc.accounts && Array.isArray(acc.accounts)) {
+      result.push(...flattenAccounts(acc.accounts));
+    } else {
+      result.push(acc.name);
+    }
+  }
+  return result;
+}
+
 // =============================================================================
 // Type Resolution
 // =============================================================================
@@ -205,15 +231,19 @@ export function parseIDL(idlJson: AnchorIDL): ParsedIDL {
   }));
 
   // Parse instructions
-  const instructions: ParsedInstruction[] = (idlJson.instructions ?? []).map((ix) => ({
-    name: ix.name,
-    discriminator:
+  const instructions: ParsedInstruction[] = (idlJson.instructions ?? []).map((ix) => {
+    // Use explicit discriminator if present, otherwise compute Anchor sighash
+    const discriminator =
       ix.discriminator && ix.discriminator.length === 8
         ? Buffer.from(ix.discriminator)
-        : Buffer.alloc(8),
-    accounts: (ix.accounts ?? []).map((a) => a.name),
-    args: (ix.args ?? []).map(parseField),
-  }));
+        : computeInstructionDiscriminator(ix.name);
+    return {
+      name: ix.name,
+      discriminator,
+      accounts: flattenAccounts(ix.accounts ?? []),
+      args: (ix.args ?? []).map(parseField),
+    };
+  });
 
   return {
     programId,

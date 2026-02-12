@@ -16,23 +16,15 @@ import type { ParsedIDL, ParsedInstruction, DecodedInstruction, ParsedField } fr
 
 export class InstructionDecoder {
   private parsedIdl: ParsedIDL;
-  private instructionMap: Map<number, ParsedInstruction>;
+  private instructions: ParsedInstruction[];
 
   /**
-   * Creates a decoder from a parsed IDL (typically from a Shank IDL).
-   * Builds a lookup map from discriminant first-byte to instruction definition.
+   * Creates a decoder from a parsed IDL.
+   * Stores instruction definitions for full discriminator matching.
    */
   constructor(parsedIdl: ParsedIDL) {
     this.parsedIdl = parsedIdl;
-
-    // Build discriminant → instruction lookup
-    this.instructionMap = new Map();
-    for (const ix of parsedIdl.instructions) {
-      if (ix.discriminator.length > 0) {
-        const key = ix.discriminator[0];
-        this.instructionMap.set(key, ix);
-      }
-    }
+    this.instructions = parsedIdl.instructions.filter((ix) => ix.discriminator.length > 0);
   }
 
   /**
@@ -113,9 +105,15 @@ export class InstructionDecoder {
 
     if (data.length === 0) return null;
 
-    // Match discriminant (first byte)
-    const discByte = data[0];
-    const ixDef = this.instructionMap.get(discByte);
+    // Match full discriminator (8 bytes for Anchor instructions)
+    const ixDef = this.instructions.find((ix) => {
+      const disc = ix.discriminator;
+      if (data.length < disc.length) return false;
+      for (let i = 0; i < disc.length; i++) {
+        if (data[i] !== disc[i]) return false;
+      }
+      return true;
+    });
     if (!ixDef) return null;
 
     // Deserialize args from data after discriminant
