@@ -56,7 +56,7 @@ export function FilterBar({
         />
 
         <Select
-          options={[{ value: '', label: 'All Events' }, ...eventTypes]}
+          options={eventTypes}
           value={selectedEvent}
           onChange={onEventChange}
         />
