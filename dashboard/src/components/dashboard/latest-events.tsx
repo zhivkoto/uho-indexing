@@ -3,31 +3,17 @@
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { ArrowRight, Search } from 'lucide-react';
-import { getPrograms, getEvents } from '@/lib/api';
+import { getEvents } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { EventTag } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/empty-state';
 import { truncateAddress, formatRelativeTime } from '@/lib/utils';
 
 export function LatestEvents() {
-  const { data: programsData } = useQuery({
-    queryKey: ['programs'],
-    queryFn: getPrograms,
-    refetchInterval: 5000,
-    retry: 1,
-  });
-
-  // Prefer a program that already has indexed events so Latest Events isn't empty
-  const programs = programsData?.data;
-  const firstProgram =
-    programs?.find((p) => (p.eventsIndexed ?? 0) > 0 && p.events?.some((e) => e.enabled)) ??
-    programs?.[0];
-  const firstEvent = firstProgram?.events?.find((e) => e.enabled)?.name;
-
+  // Fetch latest 10 events across ALL user programs and event types
   const { data: events, isLoading } = useQuery({
-    queryKey: ['latest-events', firstProgram?.name, firstEvent],
-    queryFn: () => getEvents(firstProgram!.name, firstEvent!, { limit: 10, order: 'desc' }),
-    enabled: !!firstProgram && !!firstEvent,
+    queryKey: ['latest-events-all'],
+    queryFn: () => getEvents('', '', { limit: 10, order: 'desc' }),
     refetchInterval: 5000,
     retry: 1,
   });
@@ -56,7 +42,7 @@ export function LatestEvents() {
         ) : events?.data?.length ? (
           events.data.map((event, i) => {
             const tx = String(event.txSignature || event.tx_signature || event.signature || '');
-            const eventType = String(event.eventType || event.event_type || firstEvent || 'Event');
+            const eventType = String(event.eventType || event.event_type || 'Event');
             const timestamp = event.timestamp || event.blockTime || event.block_time;
 
             return (
