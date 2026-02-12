@@ -353,16 +353,12 @@ export function registerOAuthRoutes(
 
     try {
       // Verify the Privy access token using JWKS
-      const { verifyAccessToken, createPrivyAppJWKS } = await import('@privy-io/node');
+      const { verifyAccessToken } = await import('@privy-io/node');
+      const { createRemoteJWKSet } = await import('jose');
 
-      const jwks = createPrivyAppJWKS({
-        appId: config.privyAppId,
-        apiUrl: 'https://auth.privy.io',
-        headers: {
-          'privy-app-id': config.privyAppId,
-          Authorization: `Bearer ${config.privyAppSecret}`,
-        },
-      });
+      const jwks = createRemoteJWKSet(
+        new URL(`https://auth.privy.io/api/v1/apps/${config.privyAppId}/jwks.json`)
+      );
 
       let verifiedClaims;
       try {
