@@ -151,15 +151,25 @@ export function ViewWizard() {
   };
 
   const addSelectColumn = () => {
+    const defaultField = fieldOptions[0]?.value || '';
+    const defaultAgg = groupByFields.length > 0 && !groupByFields.includes(defaultField) ? '$count' : 'value';
     setSelectColumns((prev) => [
       ...prev,
-      { alias: '', field: fieldOptions[0]?.value || '', aggregate: 'value' },
+      { alias: '', field: defaultField, aggregate: defaultAgg },
     ]);
   };
 
   const updateSelectColumn = (index: number, updates: Partial<SelectColumn>) => {
     setSelectColumns((prev) =>
-      prev.map((col, i) => (i === index ? { ...col, ...updates } : col))
+      prev.map((col, i) => {
+        if (i !== index) return col;
+        const updated = { ...col, ...updates };
+        // If field changed to one not in GROUP BY and aggregate is 'value', switch to $count
+        if (updates.field && groupByFields.length > 0 && !groupByFields.includes(updates.field) && updated.aggregate === 'value') {
+          updated.aggregate = '$count';
+        }
+        return updated;
+      })
     );
   };
 
@@ -404,7 +414,13 @@ export function ViewWizard() {
                       onChange={(e) => updateSelectColumn(i, { aggregate: e.target.value as AggOp | 'value' })}
                       className="rounded-full bg-[#23232B] border border-[#2A2A35] px-3 py-1.5 text-xs text-[#EDEDEF] focus:border-[#22D3EE] focus:outline-none transition-colors cursor-pointer"
                     >
-                      {AGG_OPTIONS.map((a) => (
+                      {AGG_OPTIONS.filter((a) => {
+                        // Only allow Raw Value if the field is in GROUP BY
+                        if (a.value === 'value' && groupByFields.length > 0 && !groupByFields.includes(col.field)) {
+                          return false;
+                        }
+                        return true;
+                      }).map((a) => (
                         <option key={a.value} value={a.value}>{a.label}</option>
                       ))}
                     </select>
