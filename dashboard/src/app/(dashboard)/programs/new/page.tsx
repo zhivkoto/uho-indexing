@@ -72,7 +72,55 @@ export default function AddProgramPage() {
     }
   };
 
-  // Step 2: Manual IDL upload
+  // Shared IDL parsing logic
+  const parseIdlJson = useCallback((jsonStr: string, source: string) => {
+    try {
+      const parsed = JSON.parse(jsonStr);
+      setIdl(parsed);
+      setIdlSource(source);
+      // Extract events from IDL
+      const idlEvents: EventSelection[] = [];
+      if (parsed.events) {
+        for (const event of parsed.events) {
+          idlEvents.push({
+            name: event.name,
+            type: 'event',
+            enabled: true,
+            fields: (event.fields || []).map((f: { name: string; type: unknown }) => ({
+              name: f.name,
+              type: typeof f.type === 'string' ? f.type : JSON.stringify(f.type),
+            })),
+          });
+        }
+      }
+      if (parsed.instructions) {
+        for (const ix of parsed.instructions) {
+          if (ix.args?.length > 0) {
+            idlEvents.push({
+              name: ix.name,
+              type: 'instruction',
+              enabled: false,
+              fields: (ix.args || []).map((a: { name: string; type: unknown }) => ({
+                name: a.name,
+                type: typeof a.type === 'string' ? a.type : JSON.stringify(a.type),
+              })),
+            });
+          }
+        }
+      }
+      setEvents(idlEvents);
+      const meta = parsed.metadata as Record<string, unknown> | undefined;
+      if (!programName) setProgramName((meta?.name as string) || (parsed.name as string) || '');
+      setStep('events');
+      toast.success('IDL parsed successfully');
+      return true;
+    } catch {
+      toast.error('Invalid JSON');
+      return false;
+    }
+  }, [programName]);
+
+  // Step 2: Manual IDL upload (file)
   const handleIdlUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -82,51 +130,20 @@ export default function AddProgramPage() {
     }
     const reader = new FileReader();
     reader.onload = (ev) => {
-      try {
-        const parsed = JSON.parse(ev.target?.result as string);
-        setIdl(parsed);
-        setIdlSource('manual');
-        // Extract events from IDL
-        const idlEvents: EventSelection[] = [];
-        if (parsed.events) {
-          for (const event of parsed.events) {
-            idlEvents.push({
-              name: event.name,
-              type: 'event',
-              enabled: true,
-              fields: (event.fields || []).map((f: { name: string; type: unknown }) => ({
-                name: f.name,
-                type: typeof f.type === 'string' ? f.type : JSON.stringify(f.type),
-              })),
-            });
-          }
-        }
-        if (parsed.instructions) {
-          for (const ix of parsed.instructions) {
-            if (ix.args?.length > 0) {
-              idlEvents.push({
-                name: ix.name,
-                type: 'instruction',
-                enabled: false,
-                fields: (ix.args || []).map((a: { name: string; type: unknown }) => ({
-                  name: a.name,
-                  type: typeof a.type === 'string' ? a.type : JSON.stringify(a.type),
-                })),
-              });
-            }
-          }
-        }
-        setEvents(idlEvents);
-        const meta = parsed.metadata as Record<string, unknown> | undefined;
-        if (!programName) setProgramName((meta?.name as string) || (parsed.name as string) || '');
-        setStep('events');
-        toast.success('IDL parsed successfully');
-      } catch {
-        toast.error('Invalid JSON file');
-      }
+      parseIdlJson(ev.target?.result as string, 'manual');
     };
     reader.readAsText(file);
-  }, [programName]);
+  }, [parseIdlJson]);
+
+  // Step 2: Paste IDL JSON
+  const [pastedIdl, setPastedIdl] = useState('');
+  const handlePasteIdl = useCallback(() => {
+    if (!pastedIdl.trim()) {
+      toast.error('Please paste IDL JSON first');
+      return;
+    }
+    parseIdlJson(pastedIdl, 'manual');
+  }, [pastedIdl, parseIdlJson]);
 
   const toggleEvent = (idx: number) => {
     setEvents((prev) => prev.map((e, i) => i === idx ? { ...e, enabled: !e.enabled } : e));
@@ -213,7 +230,7 @@ export default function AddProgramPage() {
             <p className="text-sm text-[#A0A0AB] mb-6">
               Discover the IDL on-chain or upload it manually.
             </p>
-            <div className="grid grid-cols-2 gap-4 mb-6">
+            <div className="grid grid-cols-3 gap-4 mb-6">
               <button
                 onClick={handleDiscover}
                 disabled={discovering}
@@ -225,7 +242,7 @@ export default function AddProgramPage() {
               </button>
               <label className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-[#2A2A35] rounded-xl hover:border-[#22D3EE]/50 transition-colors cursor-pointer">
                 <Upload className="w-8 h-8 text-[#63637A] mb-3" />
-                <span className="text-sm font-medium text-[#EDEDEF]">Upload IDL</span>
+                <span className="text-sm font-medium text-[#EDEDEF]">Upload File</span>
                 <span className="text-xs text-[#63637A] mt-1">Anchor IDL JSON · Max 5MB</span>
                 <input
                   type="file"
@@ -234,6 +251,31 @@ export default function AddProgramPage() {
                   className="hidden"
                 />
               </label>
+              <button
+                onClick={() => {
+                  const el = document.getElementById('idl-paste-area');
+                  if (el) el.classList.toggle('hidden');
+                }}
+                className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-[#2A2A35] rounded-xl hover:border-[#22D3EE]/50 transition-colors cursor-pointer"
+              >
+                <Check className="w-8 h-8 text-[#63637A] mb-3" />
+                <span className="text-sm font-medium text-[#EDEDEF]">Paste JSON</span>
+                <span className="text-xs text-[#63637A] mt-1">Paste IDL directly</span>
+              </button>
+            </div>
+            <div id="idl-paste-area" className="hidden mb-6">
+              <textarea
+                value={pastedIdl}
+                onChange={(e) => setPastedIdl(e.target.value)}
+                placeholder='Paste your Anchor IDL JSON here...'
+                rows={8}
+                className="w-full rounded-xl bg-[#23232B] border border-[#2A2A35] px-4 py-3 font-mono text-xs text-[#EDEDEF] placeholder:text-[#63637A] hover:border-[#3A3A48] focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/50 focus:outline-none transition-colors duration-150 resize-y"
+              />
+              <div className="flex justify-end mt-2">
+                <Button size="sm" onClick={handlePasteIdl} disabled={!pastedIdl.trim()}>
+                  Parse IDL
+                </Button>
+              </div>
             </div>
             <div className="flex justify-between">
               <Button variant="ghost" onClick={() => setStep('program-id')}>
