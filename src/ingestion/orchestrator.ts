@@ -9,10 +9,11 @@
 
 import { Connection, PublicKey } from '@solana/web3.js';
 import type pg from 'pg';
-import type { ParsedIDL, AnchorIDL, SubscriberInfo, DecodedEvent } from '../core/types.js';
+import type { ParsedIDL, AnchorIDL, SubscriberInfo, DecodedEvent, DecodedInstruction } from '../core/types.js';
 import { parseIDL } from '../core/idl-parser.js';
 import { TransactionPoller } from './poller.js';
 import { EventDecoder } from './decoder.js';
+import { InstructionDecoder } from './instruction-decoder.js';
 import { FanoutWriter } from './fanout-writer.js';
 
 // =============================================================================
@@ -24,6 +25,7 @@ interface ActiveProgram {
   programId: string;
   poller: TransactionPoller;
   decoder: EventDecoder;
+  instructionDecoder: InstructionDecoder | null;
   fanoutWriter: FanoutWriter;
   parsedIdl: ParsedIDL;
   subscribers: SubscriberInfo[];
@@ -192,12 +194,17 @@ export class IndexerOrchestrator {
       }
 
       const decoder = new EventDecoder(parsedIdl, canonicalSub.rawIdl as unknown as AnchorIDL);
+      // Create instruction decoder if the IDL has instructions
+      const instructionDecoder = parsedIdl.instructions.length > 0
+        ? new InstructionDecoder(parsedIdl)
+        : null;
       const fanoutWriter = new FanoutWriter(this.pool);
 
       this.programs.set(programId, {
         programId,
         poller,
         decoder,
+        instructionDecoder,
         fanoutWriter,
         parsedIdl,
         subscribers,
@@ -229,15 +236,19 @@ export class IndexerOrchestrator {
           const txs = await program.poller.poll();
           if (txs.length > 0) {
             const events: DecodedEvent[] = [];
+            const instructions: DecodedInstruction[] = [];
             for (const tx of txs) {
               events.push(...program.decoder.decodeTransaction(tx));
+              if (program.instructionDecoder) {
+                instructions.push(...program.instructionDecoder.decodeTransaction(tx));
+              }
             }
 
-            if (events.length > 0) {
+            if (events.length > 0 || instructions.length > 0) {
               await program.fanoutWriter.writeToSubscribers(
                 program.programId,
                 events,
-                [],
+                instructions,
                 program.subscribers
               );
             }
