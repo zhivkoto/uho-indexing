@@ -96,77 +96,30 @@ export function OAuthButtons() {
 
 /**
  * Privy wallet sign-in button.
- * Uses dynamic import to avoid loading Privy SDK when not needed.
+ * Dynamically loads Privy SDK and uses the usePrivy hook to trigger login.
+ * The PrivyAuthBridge component handles the post-login token exchange.
  */
 function PrivyButton() {
-  const [loading, setLoading] = useState(false);
-
-  const handlePrivy = async () => {
-    setLoading(true);
-    try {
-      // Dynamically import Privy hook to avoid hard dependency when not configured
-      const { usePrivy } = await import('@privy-io/react-auth');
-      // This won't work as a hook outside React — we need a different approach
-      // The actual Privy integration happens via PrivyProvider wrapping the app
-      toast.error('Privy wallet auth requires page reload');
-    } catch {
-      toast.error('Wallet auth is not available');
-    }
-    setLoading(false);
-  };
-
-  return (
-    <PrivyWalletButton />
-  );
-}
-
-/**
- * Privy wallet button that uses the Privy hook.
- * Only rendered when PrivyProvider is wrapping the app.
- */
-function PrivyWalletButton() {
-  const [loading, setLoading] = useState(false);
-  const [PrivyHook, setPrivyHook] = useState<{ login: () => void } | null>(null);
+  const [PrivyInner, setPrivyInner] = useState<any>(null);
 
   useEffect(() => {
     import('@privy-io/react-auth')
-      .then((mod) => {
-        // We can't call hooks dynamically, so this component must be inside PrivyProvider
-        // The actual hook usage will be in a child component
-        setPrivyHook({ login: () => {} });
-      })
+      .then((mod) => setPrivyInner(() => mod.usePrivy))
       .catch(() => {});
   }, []);
 
-  // This button triggers Privy's login modal via the PrivyProvider context
-  return (
-    <PrivyLoginButton />
-  );
-}
+  if (!PrivyInner) return null;
 
-/**
- * Inner Privy login button that actually uses the hook.
- */
-function PrivyLoginButton() {
-  const [privyModule, setPrivyModule] = useState<any>(null);
-
-  useEffect(() => {
-    import('@privy-io/react-auth').then(setPrivyModule).catch(() => {});
-  }, []);
-
-  if (!privyModule) return null;
-
-  return <PrivyLoginButtonInner usePrivy={privyModule.usePrivy} />;
+  return <PrivyLoginButtonInner usePrivy={PrivyInner} />;
 }
 
 function PrivyLoginButtonInner({ usePrivy }: { usePrivy: any }) {
-  const { login, authenticated } = usePrivy();
+  const { login } = usePrivy();
   const [loading, setLoading] = useState(false);
 
   const handleClick = () => {
     setLoading(true);
     login();
-    // Loading state will be cleared when Privy redirects or user cancels
     setTimeout(() => setLoading(false), 5000);
   };
 

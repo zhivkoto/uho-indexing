@@ -5,6 +5,7 @@ import { useState, type ReactNode } from 'react';
 import { Toaster } from 'sonner';
 import { AuthProvider } from '@/components/auth/auth-provider';
 import { ConditionalPrivyProvider } from '@/components/auth/privy-provider';
+import { PrivyAuthBridge } from '@/components/auth/privy-auth-bridge';
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(
@@ -24,6 +25,7 @@ export function Providers({ children }: { children: ReactNode }) {
     <QueryClientProvider client={queryClient}>
       <ConditionalPrivyProvider>
       <AuthProvider>
+        <PrivyAuthBridge />
         {children}
       </AuthProvider>
       </ConditionalPrivyProvider>
