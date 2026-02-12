@@ -398,16 +398,29 @@ export async function resolveTable(
     ];
     fieldDetails = instruction.args;
   } else {
-    // Accept both snake_case and original names
+    // Accept both snake_case and original names — try events first, then instructions
     const event = parsedIdl.events.find(
       (e) => toSnakeCase(e.name) === eventName || e.name === eventName
     );
-    if (!event) {
-      throw new NotFoundError(`Event '${eventName}' not found in program '${programName}'`);
+    if (event) {
+      tableName = eventTableName(idlProgramName, event.name);
+      fields = event.fields.map((f) => f.name);
+      fieldDetails = event.fields;
+    } else {
+      // Fall back to instruction lookup (frontend may omit _ix suffix)
+      const instruction = parsedIdl.instructions.find(
+        (ix) => toSnakeCase(ix.name) === eventName || ix.name === eventName
+      );
+      if (!instruction) {
+        throw new NotFoundError(`Event '${eventName}' not found in program '${programName}'`);
+      }
+      tableName = instructionTableName(idlProgramName, instruction.name);
+      fields = [
+        ...instruction.args.map((f) => f.name),
+        ...instruction.accounts.map((a) => toSnakeCase(a)),
+      ];
+      fieldDetails = instruction.args;
     }
-    tableName = eventTableName(idlProgramName, event.name);
-    fields = event.fields.map((f) => f.name);
-    fieldDetails = event.fields;
   }
 
   const knownFields = new Set([
