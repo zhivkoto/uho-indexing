@@ -50,7 +50,7 @@ export function FilterBar({
         </div>
 
         <Select
-          options={[{ value: '', label: 'All Programs' }, ...programs]}
+          options={programs}
           value={selectedProgram}
           onChange={onProgramChange}
         />
