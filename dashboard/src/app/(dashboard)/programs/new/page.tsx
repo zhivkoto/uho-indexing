@@ -343,7 +343,7 @@ export default function AddProgramPage() {
                         <div className="flex items-start gap-2.5 p-2.5 rounded-lg bg-[rgba(34,211,238,0.06)] border border-[rgba(34,211,238,0.12)]">
                           <Info className="w-3.5 h-3.5 text-[#22D3EE] mt-0.5 shrink-0" />
                           <p className="text-xs text-[#A0A0AB] leading-relaxed">
-                            <span className="text-[#22D3EE] font-medium">Demo limit:</span> backfill covers the last ~10,000 slots (~67 minutes of chain history). Full archival backfill available in production.
+                            <span className="text-[#22D3EE] font-medium">Demo limit:</span> backfill covers the last ~2,000 slots (~13 minutes of chain history). Full archival backfill available in production.
                           </p>
                         </div>
                         <div className="p-2.5 rounded-lg bg-[#16161A] border border-[#1E1E26]">

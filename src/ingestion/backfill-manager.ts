@@ -23,7 +23,7 @@ import path from 'path';
 // =============================================================================
 
 /** Maximum number of slots allowed for backfill in demo mode */
-export const DEMO_BACKFILL_SLOT_LIMIT = 10_000;
+export const DEMO_BACKFILL_SLOT_LIMIT = 2_000;
 
 // =============================================================================
 // Types
