@@ -17,7 +17,11 @@ export function LatestEvents() {
     retry: 1,
   });
 
-  const firstProgram = programsData?.data?.[0];
+  // Prefer a program that already has indexed events so Latest Events isn't empty
+  const programs = programsData?.data;
+  const firstProgram =
+    programs?.find((p) => (p.eventsIndexed ?? 0) > 0 && p.events?.some((e) => e.enabled)) ??
+    programs?.[0];
   const firstEvent = firstProgram?.events?.find((e) => e.enabled)?.name;
 
   const { data: events, isLoading } = useQuery({
