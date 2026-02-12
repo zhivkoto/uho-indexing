@@ -148,10 +148,15 @@ export class EventWriter {
     // Add arg values
     for (const argField of ixDef.args) {
       const value = ix.args[argField.name] ?? findFieldValue(ix.args, argField.name);
-      if (typeof value === 'object' && value !== null) {
+      if (value === undefined || value === null) {
+        values.push(null);
+      } else if (argField.sqlType === 'JSONB') {
+        // JSONB columns need valid JSON — wrap primitives in JSON
+        values.push(typeof value === 'object' ? JSON.stringify(value) : JSON.stringify(value));
+      } else if (typeof value === 'object') {
         values.push(JSON.stringify(value));
       } else {
-        values.push(value ?? null);
+        values.push(value);
       }
     }
 
