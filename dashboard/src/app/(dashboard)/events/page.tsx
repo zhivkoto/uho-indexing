@@ -121,6 +121,8 @@ function EventExplorerContent() {
       ) : (
         <EventTable
           data={filteredData}
+          program={activeProgram}
+          event={activeEvent}
           eventType={activeEvent}
           sorting={sorting}
           onSortingChange={setSorting}

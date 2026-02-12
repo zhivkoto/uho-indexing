@@ -15,6 +15,8 @@ import Link from 'next/link';
 
 interface EventTableProps {
   data: Record<string, unknown>[];
+  program?: string;
+  event?: string;
   eventType?: string;
   sorting: SortingState;
   onSortingChange: (sorting: SortingState) => void;
@@ -57,6 +59,8 @@ function CellValue({ value }: { value: unknown }) {
 
 export function EventTable({
   data,
+  program,
+  event,
   eventType,
   sorting,
   onSortingChange,
@@ -90,7 +94,7 @@ export function EventTable({
         // Special rendering for known columns
         if ((key === 'txSignature' || key === 'tx_signature' || key === 'signature') && typeof val === 'string') {
           return (
-            <Link href={`/events/${val}`} className="font-mono text-[13px] text-[#67E8F9] hover:underline">
+            <Link href={`/events/${val}?program=${program}&event=${event}`} className="font-mono text-[13px] text-[#67E8F9] hover:underline">
               {truncateAddress(val, 4)}
             </Link>
           );

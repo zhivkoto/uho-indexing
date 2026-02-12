@@ -1,6 +1,6 @@
 'use client';
 
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { ArrowLeft, ExternalLink, Copy, Check, Search } from 'lucide-react';
@@ -43,7 +43,10 @@ function CopyButton({ text }: { text: string }) {
 
 export default function EventDetailPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const txSignature = params.txSignature as string;
+  const qsProgram = searchParams.get('program') || '';
+  const qsEvent = searchParams.get('event') || '';
 
   const { data: status } = useQuery({
     queryKey: ['status'],
@@ -51,13 +54,13 @@ export default function EventDetailPage() {
     retry: 1,
   });
 
-  const firstProgram = status?.programs?.[0];
-  const firstEvent = firstProgram?.events?.[0];
+  const programName = qsProgram || status?.programs?.[0]?.name;
+  const eventName = qsEvent || status?.programs?.find(p => p.name === programName)?.events?.[0];
 
   const { data: eventData, isLoading, error } = useQuery({
-    queryKey: ['event-detail', firstProgram?.name, firstEvent, txSignature],
-    queryFn: () => getEventByTx(firstProgram!.name, firstEvent!, txSignature),
-    enabled: !!firstProgram && !!firstEvent && !!txSignature,
+    queryKey: ['event-detail', programName, eventName, txSignature],
+    queryFn: () => getEventByTx(programName!, eventName!, txSignature),
+    enabled: !!programName && !!eventName && !!txSignature,
     retry: 1,
   });
 
