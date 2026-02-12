@@ -45,9 +45,12 @@ export class ApiError extends Error {
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   const token = getAccessToken();
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     ...(options?.headers as Record<string, string> | undefined),
   };
+  // Only set Content-Type for requests with a body to avoid Fastify parse errors
+  if (options?.body) {
+    headers['Content-Type'] = headers['Content-Type'] || 'application/json';
+  }
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
   let res = await fetch(`${API_URL}${path}`, {
@@ -248,11 +251,11 @@ export async function archiveProgram(id: string): Promise<void> {
 }
 
 export async function pauseProgram(id: string): Promise<void> {
-  await fetchApi(`/api/v1/programs/${id}/pause`, { method: 'POST' });
+  await fetchApi(`/api/v1/programs/${id}/pause`, { method: 'POST', body: '{}' });
 }
 
 export async function resumeProgram(id: string): Promise<void> {
-  await fetchApi(`/api/v1/programs/${id}/resume`, { method: 'POST' });
+  await fetchApi(`/api/v1/programs/${id}/resume`, { method: 'POST', body: '{}' });
 }
 
 export async function retryBackfill(programId: string): Promise<void> {
