@@ -400,7 +400,7 @@ export function ViewWizard() {
                     <input
                       type="text"
                       value={col.alias}
-                      onChange={(e) => updateSelectColumn(i, { alias: e.target.value })}
+                      onChange={(e) => updateSelectColumn(i, { alias: e.target.value.replace(/[^a-zA-Z0-9_]/g, '') })}
                       placeholder="Column name"
                       className="rounded-full bg-[#23232B] border border-[#2A2A35] px-3 py-1.5 text-xs text-[#EDEDEF] placeholder:text-[#63637A] focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/50 focus:outline-none transition-colors"
                     />
