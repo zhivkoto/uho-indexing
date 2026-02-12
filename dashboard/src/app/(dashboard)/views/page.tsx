@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { Table2, Plus, Trash2, RefreshCw, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { getViews, deleteView } from '@/lib/api';
+import { getViews, deleteView, getPrograms } from '@/lib/api';
 import { PageContainer } from '@/components/layout/page-container';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ import { Modal } from '@/components/ui/modal';
 import { Spinner } from '@/components/ui/spinner';
 import { ViewResults } from '@/components/views/view-results';
 import { formatRelativeTime } from '@/lib/utils';
-import type { ViewInfo } from '@/lib/types';
+import type { ViewInfo, ProgramInfo } from '@/lib/types';
 
 const statusBadge: Record<string, { variant: 'success' | 'warning' | 'error' | 'default'; pulse: boolean }> = {
   active: { variant: 'success', pulse: false },
@@ -34,6 +34,11 @@ export default function ViewsPage() {
     queryKey: ['views'],
     queryFn: getViews,
     refetchInterval: 10000,
+  });
+
+  const { data: programsData } = useQuery({
+    queryKey: ['programs'],
+    queryFn: getPrograms,
   });
 
   const deleteMutation = useMutation({
@@ -149,18 +154,11 @@ export default function ViewsPage() {
         title={previewView ? `View: ${previewView.name}` : ''}
         size="xl"
       >
-        {previewView && previewView.status === 'active' && (
-          <ViewResults
-            programName={previewView.programName}
-            viewName={previewView.name}
+        {previewView && (
+          <ViewFieldsAndResults
+            view={previewView}
+            programs={programsData?.data || []}
           />
-        )}
-        {previewView && previewView.status !== 'active' && (
-          <div className="text-center py-8">
-            <p className="text-sm text-[#63637A]">
-              View is {previewView.status}. {previewView.error ? previewView.error : 'Results are not available yet.'}
-            </p>
-          </div>
         )}
       </Modal>
 
@@ -186,5 +184,81 @@ export default function ViewsPage() {
         </div>
       </Modal>
     </PageContainer>
+  );
+}
+
+const SYSTEM_FIELDS = [
+  { name: 'slot', type: 'u64' },
+  { name: 'block_time', type: 'i64' },
+  { name: 'tx_signature', type: 'string' },
+  { name: 'ix_index', type: 'u32' },
+  { name: 'inner_ix_index', type: 'u32' },
+];
+
+function ViewFieldsAndResults({ view, programs }: { view: ViewInfo; programs: ProgramInfo[] }) {
+  // Find the program to extract IDL fields for the source event
+  const program = programs.find((p) => p.name === view.programName);
+
+  const sourceFields = useMemo(() => {
+    if (!program) return SYSTEM_FIELDS;
+    // We don't have the full IDL here (ProgramInfo excludes it), so show what we know
+    // from the view's definition + system fields
+    const definedFields = [
+      ...Object.keys(view.definition.select).map((k) => ({ name: k, type: 'selected' })),
+    ];
+    const groupBy = Array.isArray(view.definition.groupBy) ? view.definition.groupBy : [view.definition.groupBy];
+    const groupFields = groupBy.map((g) => ({ name: g, type: 'group_by' }));
+
+    // Deduplicate
+    const seen = new Set<string>();
+    const fields: { name: string; type: string }[] = [];
+    for (const f of [...groupFields, ...definedFields]) {
+      if (!seen.has(f.name)) {
+        seen.add(f.name);
+        fields.push(f);
+      }
+    }
+    return fields;
+  }, [view, program]);
+
+  return (
+    <div className="space-y-4">
+      {/* Available fields from view definition */}
+      <div className="p-4 rounded-xl bg-[#09090B] border border-[#1E1E26]">
+        <div className="flex items-center gap-3 mb-2">
+          <span className="text-[11px] font-semibold tracking-widest uppercase text-[#63637A]">
+            Source: <span className="text-[#67E8F9] normal-case">{view.definition.source}</span>
+          </span>
+          <span className="text-[11px] font-semibold tracking-widest uppercase text-[#63637A]">
+            Program: <span className="text-[#A0A0AB] normal-case">{view.programName}</span>
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {sourceFields.map((f) => (
+            <span
+              key={f.name}
+              className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs border ${
+                f.type === 'group_by'
+                  ? 'bg-[#22D3EE]/5 border-[#22D3EE]/20 text-[#22D3EE]'
+                  : 'bg-[#16161A] border-[#1E1E26]'
+              }`}
+            >
+              <span className="font-mono text-[#EDEDEF]">{f.name}</span>
+              <span className="text-[#63637A]">({f.type})</span>
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {view.status === 'active' ? (
+        <ViewResults programName={view.programName} viewName={view.name} />
+      ) : (
+        <div className="text-center py-8">
+          <p className="text-sm text-[#63637A]">
+            View is {view.status}. {view.error ? view.error : 'Results are not available yet.'}
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
