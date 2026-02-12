@@ -50,11 +50,11 @@ export class InstructionDecoder {
       // (with `data` as base58 string and `accounts` as PublicKey[]) or ParsedInstruction
       // (already decoded by the RPC). We want the raw ones.
       if (!('data' in ix)) continue; // Skip fully-parsed instructions (e.g., system program)
+      if (!ix.programId || !ix.data || !ix.accounts) continue;
       if (ix.programId.toBase58() !== programId) continue;
 
-      const decoded = this.decodeInstructionData(ix.data, ix.accounts.map((a: any) => a.toBase58()));
+      const decoded = this.decodeInstructionData(ix.data, ix.accounts.map((a: any) => a.toBase58?.() ?? String(a)));
       if (decoded) {
-        console.log(`  🔧 Decoded instruction: ${decoded.instructionName}`);
         results.push({
           ...decoded,
           programId,
@@ -72,9 +72,10 @@ export class InstructionDecoder {
       for (let j = 0; j < inner.instructions.length; j++) {
         const ix = inner.instructions[j];
         if (!('data' in ix)) continue;
+        if (!ix.programId || !ix.data || !ix.accounts) continue;
         if (ix.programId.toBase58() !== programId) continue;
 
-        const decoded = this.decodeInstructionData(ix.data, ix.accounts.map((a: any) => a.toBase58()));
+        const decoded = this.decodeInstructionData(ix.data, ix.accounts.map((a: any) => a.toBase58?.() ?? String(a)));
         if (decoded) {
           results.push({
             ...decoded,
