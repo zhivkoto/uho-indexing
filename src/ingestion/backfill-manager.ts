@@ -304,16 +304,35 @@ export class BackfillManager {
 
     console.log(`[Backfill] RPC backfill: fetching signatures for ${config.programId} in slot range ${startSlot}-${endSlot}`);
 
-    // Fetch all signatures in the slot range using pagination
+    // Fetch all signatures in the slot range using pagination (with retry on 429)
     let allSignatures: Array<{ signature: string; slot: number; err: unknown }> = [];
     let before: string | undefined;
     let done = false;
 
     while (!done) {
-      const sigs = await connection.getSignaturesForAddress(programPubkey, {
-        limit: 1000,
-        before,
-      });
+      let sigs: Awaited<ReturnType<typeof connection.getSignaturesForAddress>>;
+      let retries = 0;
+      const MAX_RETRIES = 5;
+
+      while (true) {
+        try {
+          sigs = await connection.getSignaturesForAddress(programPubkey, {
+            limit: 1000,
+            before,
+          });
+          break;
+        } catch (err) {
+          const msg = (err as Error).message || '';
+          if ((msg.includes('429') || msg.includes('Too many requests')) && retries < MAX_RETRIES) {
+            retries++;
+            const backoff = Math.min(1000 * Math.pow(2, retries), 10000);
+            console.log(`[Backfill] Rate limited (getSignatures), retry ${retries}/${MAX_RETRIES} in ${backoff}ms`);
+            await new Promise((r) => setTimeout(r, backoff));
+          } else {
+            throw err;
+          }
+        }
+      }
 
       if (sigs.length === 0) break;
 
@@ -329,6 +348,9 @@ export class BackfillManager {
 
       before = sigs[sigs.length - 1].signature;
       if (sigs.length < 1000) break;
+
+      // Rate limit between pagination calls
+      await new Promise((r) => setTimeout(r, 200));
     }
 
     console.log(`[Backfill] Found ${allSignatures.length} signatures in range`);
@@ -358,9 +380,26 @@ export class BackfillManager {
       if (sig.err) continue;
 
       try {
-        const tx = await connection.getParsedTransaction(sig.signature, {
-          maxSupportedTransactionVersion: 0,
-        });
+        let tx: Awaited<ReturnType<typeof connection.getParsedTransaction>>;
+        let txRetries = 0;
+        while (true) {
+          try {
+            tx = await connection.getParsedTransaction(sig.signature, {
+              maxSupportedTransactionVersion: 0,
+            });
+            break;
+          } catch (err) {
+            const msg = (err as Error).message || '';
+            if ((msg.includes('429') || msg.includes('Too many requests')) && txRetries < 5) {
+              txRetries++;
+              const backoff = Math.min(1000 * Math.pow(2, txRetries), 10000);
+              console.log(`[Backfill] Rate limited (getTx), retry ${txRetries}/5 in ${backoff}ms`);
+              await new Promise((r) => setTimeout(r, backoff));
+            } else {
+              throw err;
+            }
+          }
+        }
 
         if (!tx?.meta?.logMessages) continue;
 
@@ -412,8 +451,8 @@ export class BackfillManager {
         });
       }
 
-      // Small delay to avoid rate limiting
-      await new Promise((r) => setTimeout(r, 100));
+      // Delay to avoid rate limiting (pump.fun has very high tx volume)
+      await new Promise((r) => setTimeout(r, 200));
     }
 
     // Mark completed
