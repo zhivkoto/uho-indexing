@@ -181,7 +181,8 @@ export function parseEvent(event: AnchorEvent, typesLookup?: Map<string, AnchorF
  */
 export function parseIDL(idlJson: AnchorIDL): ParsedIDL {
   const programId = idlJson.address;
-  const programName = toSnakeCase(idlJson.metadata.name);
+  const rawName = idlJson.metadata?.name ?? idlJson.name ?? 'unknown_program';
+  const programName = toSnakeCase(rawName);
 
   // Build types lookup for v0.30+ IDLs where event fields are in the types array
   const typesLookup = new Map<string, AnchorField[]>();
@@ -210,8 +211,8 @@ export function parseIDL(idlJson: AnchorIDL): ParsedIDL {
       ix.discriminator && ix.discriminator.length === 8
         ? Buffer.from(ix.discriminator)
         : Buffer.alloc(8),
-    accounts: ix.accounts.map((a) => a.name),
-    args: ix.args.map(parseField),
+    accounts: (ix.accounts ?? []).map((a) => a.name),
+    args: (ix.args ?? []).map(parseField),
   }));
 
   return {
