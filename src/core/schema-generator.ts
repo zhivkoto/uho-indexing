@@ -80,6 +80,21 @@ CREATE TABLE IF NOT EXISTS _uho_state (
 );`.trim();
 }
 
+/**
+ * Generates DDL for the _tx_logs table.
+ * Stores raw Solana transaction log messages per tx signature.
+ */
+export function generateTxLogsTable(): string {
+  return `
+CREATE TABLE IF NOT EXISTS _tx_logs (
+    tx_signature    TEXT PRIMARY KEY,
+    slot            BIGINT NOT NULL,
+    log_messages    TEXT[] NOT NULL,
+    indexed_at      TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_tx_logs_slot ON _tx_logs (slot);`.trim();
+}
+
 // =============================================================================
 // Event Table Generation
 // =============================================================================
@@ -220,8 +235,9 @@ export function generateInstructionTable(programName: string, instruction: Parse
 export function generateDDL(parsed: ParsedIDL, config: ProgramConfig): string[] {
   const ddl: string[] = [];
 
-  // Always include the metadata state table
+  // Always include the metadata state table + tx logs table
   ddl.push(generateMetadataTable());
+  ddl.push(generateTxLogsTable());
 
   // Filter events if a whitelist is configured
   const events = config.events
@@ -267,8 +283,9 @@ export function generateUserSchemaDDL(
   // Set search_path for this schema
   ddl.push(`SET search_path TO ${quoteIdent(schemaName)}, public`);
 
-  // Always include metadata table
+  // Always include metadata + tx logs tables
   ddl.push(generateMetadataTable());
+  ddl.push(generateTxLogsTable());
 
   // Filter events by enabled status
   const enabledEventNames = new Set(

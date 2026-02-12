@@ -293,6 +293,31 @@ export function registerDataRoutes(app: FastifyInstance, pool: pg.Pool): void {
   });
 
   // -----------------------------------------------------------------------
+  // GET /api/v1/tx-logs/:txSignature — Transaction log messages
+  // -----------------------------------------------------------------------
+  app.get('/api/v1/tx-logs/:txSignature', { preHandler: preHandlers }, async (request, reply) => {
+    const client = request.schemaClient!;
+    const { txSignature } = request.params as { txSignature: string };
+
+    try {
+      const result = await client.query(
+        'SELECT tx_signature, slot, log_messages, indexed_at FROM _tx_logs WHERE tx_signature = $1',
+        [txSignature]
+      );
+      if (result.rows.length === 0) {
+        return { data: null };
+      }
+      return { data: result.rows[0] };
+    } catch (err) {
+      // Table might not exist for older schemas
+      if ((err as { code?: string })?.code === '42P01') {
+        return { data: null };
+      }
+      throw err;
+    }
+  });
+
+  // -----------------------------------------------------------------------
   // GET /api/v1/data/:program/views/:viewName — Query a custom view
   // -----------------------------------------------------------------------
   app.get('/api/v1/data/:program/views/:viewName', { preHandler: preHandlers }, async (request, reply) => {

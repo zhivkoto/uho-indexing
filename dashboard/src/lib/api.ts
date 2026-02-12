@@ -327,6 +327,12 @@ export async function getEventByTx(
   return fetchApi(`/api/v1/data/${program}/${event}/${txSignature}`);
 }
 
+export async function getTxLogs(
+  txSignature: string,
+): Promise<{ data: { tx_signature: string; slot: number; log_messages: string[]; indexed_at: string } | null }> {
+  return fetchApi(`/api/v1/tx-logs/${txSignature}`);
+}
+
 // ─── Views ────────────────────────────────────────────────────
 export async function getViews(): Promise<{ data: ViewInfo[] }> {
   return fetchApi('/api/v1/views');

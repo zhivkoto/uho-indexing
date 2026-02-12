@@ -32,7 +32,8 @@ export class FanoutWriter {
     programId: string,
     events: DecodedEvent[],
     instructions: DecodedInstruction[],
-    subscribers: SubscriberInfo[]
+    subscribers: SubscriberInfo[],
+    txLogs?: Array<{ txSignature: string; slot: number; logMessages: string[] }>
   ): Promise<WriteResult> {
     const result: WriteResult = { totalWritten: 0, perSubscriber: {} };
 
@@ -63,6 +64,25 @@ export class FanoutWriter {
 
           if (enabledInstructions.length > 0) {
             count += await writer.writeInstructions(enabledInstructions);
+          }
+
+          // Write transaction logs (only for txs that had events/instructions written)
+          if (txLogs?.length) {
+            const writtenTxSigs = new Set([
+              ...enabledEvents.map((e) => e.txSignature),
+              ...enabledInstructions.map((ix) => ix.txSignature),
+            ]);
+            const relevantLogs = txLogs.filter((l) => writtenTxSigs.has(l.txSignature));
+            for (const log of relevantLogs) {
+              try {
+                await client.query(
+                  `INSERT INTO _tx_logs (tx_signature, slot, log_messages) VALUES ($1, $2, $3) ON CONFLICT (tx_signature) DO NOTHING`,
+                  [log.txSignature, log.slot, log.logMessages]
+                );
+              } catch {
+                // _tx_logs table might not exist yet for older schemas — skip
+              }
+            }
           }
 
           // Update _uho_state in subscriber's schema

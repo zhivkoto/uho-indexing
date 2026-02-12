@@ -242,10 +242,22 @@ export class IndexerOrchestrator {
           if (txs.length > 0) {
             const events: DecodedEvent[] = [];
             const instructions: DecodedInstruction[] = [];
+            const txLogs: Array<{ txSignature: string; slot: number; logMessages: string[] }> = [];
             for (const tx of txs) {
               events.push(...program.decoder.decodeTransaction(tx));
               if (program.instructionDecoder) {
                 instructions.push(...program.instructionDecoder.decodeTransaction(tx));
+              }
+              // Collect transaction logs
+              if (tx.meta?.logMessages?.length) {
+                const sig = tx.transaction.signatures[0];
+                if (sig) {
+                  txLogs.push({
+                    txSignature: sig,
+                    slot: tx.slot,
+                    logMessages: tx.meta.logMessages,
+                  });
+                }
               }
             }
 
@@ -254,7 +266,8 @@ export class IndexerOrchestrator {
                 program.programId,
                 events,
                 instructions,
-                program.subscribers
+                program.subscribers,
+                txLogs
               );
             }
           }

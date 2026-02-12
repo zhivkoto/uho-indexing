@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { ArrowLeft, ExternalLink, Copy, Check, Search } from 'lucide-react';
 import { useState } from 'react';
-import { getPrograms, getEventByTx } from '@/lib/api';
+import { getPrograms, getEventByTx, getTxLogs } from '@/lib/api';
 import { PageContainer } from '@/components/layout/page-container';
 import { Card } from '@/components/ui/card';
 import { Badge, EventTag } from '@/components/ui/badge';
@@ -66,8 +66,16 @@ export default function EventDetailPage() {
     retry: 1,
   });
 
+  const { data: txLogsData } = useQuery({
+    queryKey: ['tx-logs', txSignature],
+    queryFn: () => getTxLogs(txSignature),
+    enabled: !!txSignature,
+    retry: 1,
+  });
+
   const events = eventData?.data || [];
   const mainEvent = events[0];
+  const txLogs = txLogsData?.data?.log_messages || [];
 
   return (
     <PageContainer
@@ -189,6 +197,41 @@ export default function EventDetailPage() {
                     {String(evt.eventType || evt.event_type || 'Event')}
                   </EventTag>
                 ))}
+              </div>
+            </Card>
+          )}
+
+          {txLogs.length > 0 && (
+            <Card>
+              <h3 className="text-[15px] font-semibold leading-5 text-[#EDEDEF] mb-3">
+                Transaction Logs ({txLogs.length})
+              </h3>
+              <div className="bg-[#0A0A0E] rounded-lg border border-[#1E1E26] p-4 max-h-[400px] overflow-y-auto font-mono text-[12px] leading-5 space-y-0">
+                {txLogs.map((log, i) => {
+                  const isProgram = log.startsWith('Program ');
+                  const isError = log.includes('failed') || log.includes('Error') || log.includes('error');
+                  const isInvoke = log.includes('invoke [');
+                  const isSuccess = log.includes('success');
+                  const isData = log.startsWith('Program data:') || log.startsWith('Program log:');
+                  const indent = log.match(/^(\s*)/)?.[1]?.length || 0;
+                  return (
+                    <div
+                      key={i}
+                      className={`${
+                        isError ? 'text-red-400' :
+                        isSuccess ? 'text-emerald-400' :
+                        isInvoke ? 'text-[#67E8F9]' :
+                        isData ? 'text-amber-300' :
+                        isProgram ? 'text-[#A0A0AB]' :
+                        'text-[#63637A]'
+                      }`}
+                      style={{ paddingLeft: `${indent * 2}px` }}
+                    >
+                      <span className="text-[#3A3A48] select-none mr-2">{String(i + 1).padStart(3)}</span>
+                      {log}
+                    </div>
+                  );
+                })}
               </div>
             </Card>
           )}
