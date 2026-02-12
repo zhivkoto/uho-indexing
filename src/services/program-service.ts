@@ -67,6 +67,8 @@ export class ProgramService {
     if (existing.rows.length > 0) {
       if (existing.rows[0].status === 'archived') {
         // Remove archived program so user can re-add it fresh
+        // Delete backfill_jobs first (FK may not cascade on older schemas)
+        await this.pool.query('DELETE FROM backfill_jobs WHERE user_program_id = $1', [existing.rows[0].id]);
         await this.pool.query('DELETE FROM user_programs WHERE id = $1', [existing.rows[0].id]);
       } else {
         throw new ConflictError('You are already indexing this program');
