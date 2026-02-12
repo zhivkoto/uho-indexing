@@ -102,7 +102,6 @@ function EventExplorerContent() {
   }, [events?.data, search]);
 
   const noPrograms = !status?.programs?.length;
-  const noEvents = !activeEvent;
 
   return (
     <div className="space-y-4">
@@ -122,15 +121,11 @@ function EventExplorerContent() {
         onClearFilters={clearFilters}
       />
 
-      {noPrograms || noEvents ? (
+      {noPrograms ? (
         <EmptyState
           icon={<Search className="w-6 h-6" />}
-          title={noPrograms ? 'No programs indexed' : 'No event types available'}
-          description={
-            noPrograms
-              ? 'Add a program to start indexing events.'
-              : 'Select a program with indexed events to explore.'
-          }
+          title="No programs indexed"
+          description="Add a program to start indexing events."
         />
       ) : (
         <EventTable
