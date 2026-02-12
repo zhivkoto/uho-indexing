@@ -312,7 +312,7 @@ export default function ProgramDetailPage() {
                   </div>
                   <div className="flex items-center gap-4">
                     <span className="font-mono text-sm text-[#A0A0AB]">{formatNumber(evt.count || 0)} events</span>
-                    <Link href={`/events?program=${program.name}`}>
+                    <Link href={`/events?program=${program.name}&event=${evt.name}`}>
                       <Button variant="ghost" size="sm">View →</Button>
                     </Link>
                   </div>

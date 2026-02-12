@@ -17,9 +17,10 @@ const PAGE_SIZE = 50;
 function EventExplorerContent() {
   const searchParams = useSearchParams();
   const initialProgram = searchParams.get('program') || '';
+  const initialEvent = searchParams.get('event') || '';
 
   const [selectedProgram, setSelectedProgram] = useState(initialProgram);
-  const [selectedEvent, setSelectedEvent] = useState('');
+  const [selectedEvent, setSelectedEvent] = useState(initialEvent);
   const [search, setSearch] = useState('');
   const [slotFrom, setSlotFrom] = useState('');
   const [slotTo, setSlotTo] = useState('');
