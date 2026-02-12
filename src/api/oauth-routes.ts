@@ -114,12 +114,16 @@ export function registerOAuthRoutes(
     const storedState = cookies?.oauth_state;
     reply.clearCookie('oauth_state', { path: '/' });
 
+    console.log('[OAuth] Google callback - storedState:', storedState ? 'present' : 'MISSING', 'queryState:', query.state ? 'present' : 'MISSING');
+
     if (!storedState || !query.state || storedState !== query.state) {
+      console.error('[OAuth] Google state mismatch - stored:', !!storedState, 'query:', !!query.state, 'match:', storedState === query.state);
       return reply.redirect(`${config.dashboardUrl}/login?error=invalid_state`);
     }
 
     try {
       const redirectUri = `${config.baseUrl}/api/v1/auth/google/callback`;
+      console.log('[OAuth] Google callback - exchanging code, redirectUri:', redirectUri);
 
       // Exchange code for tokens
       const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
@@ -135,11 +139,14 @@ export function registerOAuthRoutes(
       });
 
       if (!tokenRes.ok) {
-        console.error('[OAuth] Google token exchange failed:', await tokenRes.text());
+        const tokenErrBody = await tokenRes.text();
+        console.error('[OAuth] Google token exchange failed:', tokenRes.status, tokenErrBody);
+        console.error('[OAuth] Google token exchange redirect_uri used:', redirectUri);
         return reply.redirect(`${config.dashboardUrl}/login?error=oauth_failed`);
       }
 
       const tokens = await tokenRes.json() as { access_token: string };
+      console.log('[OAuth] Google token exchange succeeded');
 
       // Get user info
       const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
@@ -147,6 +154,8 @@ export function registerOAuthRoutes(
       });
 
       if (!userRes.ok) {
+        const userErrBody = await userRes.text();
+        console.error('[OAuth] Google userinfo fetch failed:', userRes.status, userErrBody);
         return reply.redirect(`${config.dashboardUrl}/login?error=oauth_failed`);
       }
 
@@ -352,13 +361,13 @@ export function registerOAuthRoutes(
     }
 
     try {
-      // Verify the Privy access token using JWKS
-      const { verifyAccessToken } = await import('@privy-io/node');
+      // Use PrivyClient which handles JWKS setup internally
+      const { PrivyClient, verifyAccessToken } = await import('@privy-io/node');
       const { createRemoteJWKSet } = await import('jose');
 
-      const jwks = createRemoteJWKSet(
-        new URL(`https://auth.privy.io/api/v1/apps/${config.privyAppId}/jwks.json`)
-      );
+      // Verify the Privy access token
+      const jwksUrl = `https://api.privy.io/v1/apps/${config.privyAppId}/jwks.json`;
+      const jwks = createRemoteJWKSet(new URL(jwksUrl));
 
       let verifiedClaims;
       try {
@@ -367,32 +376,50 @@ export function registerOAuthRoutes(
           app_id: config.privyAppId,
           verification_key: jwks,
         });
-      } catch (verifyErr) {
-        console.error('[OAuth] Privy verification failed:', (verifyErr as Error).message);
+      } catch (verifyErr: any) {
+        console.error('[OAuth] Privy verification failed:', verifyErr?.message, verifyErr?.code, verifyErr);
         return reply.status(401).send({
           error: { code: 'UNAUTHORIZED', message: 'Invalid Privy token' },
         });
       }
 
-      // Get user details from Privy API to find wallet address
-      const { default: PrivyAPI } = await import('@privy-io/node');
-      const privyApi = new PrivyAPI({ appID: config.privyAppId, appSecret: config.privyAppSecret });
-      const privyUser = await privyApi.users.get(verifiedClaims.userId);
+      console.log('[OAuth] Privy token verified, user_id:', verifiedClaims.user_id);
 
-      const walletAccount = privyUser.linkedAccounts?.find(
-        (a: any) => a.type === 'wallet' && a.chainType === 'solana'
-      ) ?? privyUser.linkedAccounts?.find(
+      // Get user details from Privy API to find wallet address
+      const privyClient = new PrivyClient({
+        appId: config.privyAppId,
+        appSecret: config.privyAppSecret,
+      });
+
+      let privyUser: any;
+      try {
+        // Use the REST API _get method to fetch user by DID
+        privyUser = await (privyClient.users() as any)._get(verifiedClaims.user_id);
+      } catch (userErr: any) {
+        console.error('[OAuth] Privy user fetch failed:', userErr?.message, userErr);
+        return reply.status(500).send({
+          error: { code: 'INTERNAL_ERROR', message: 'Failed to fetch Privy user details' },
+        });
+      }
+
+      console.log('[OAuth] Privy user fetched, linked_accounts:', JSON.stringify(privyUser?.linked_accounts?.map((a: any) => ({ type: a.type, chain_type: a.chain_type, address: a.address }))));
+
+      const linkedAccounts = privyUser?.linked_accounts ?? privyUser?.linkedAccounts ?? [];
+      const walletAccount = linkedAccounts.find(
+        (a: any) => a.type === 'wallet' && (a.chain_type === 'solana' || a.chainType === 'solana')
+      ) ?? linkedAccounts.find(
         (a: any) => a.type === 'wallet'
       );
 
-      const walletAddress = (walletAccount as any)?.address;
+      const walletAddress = walletAccount?.address;
       if (!walletAddress) {
+        console.error('[OAuth] No wallet found in Privy user. Accounts:', JSON.stringify(linkedAccounts));
         return reply.status(422).send({
           error: { code: 'VALIDATION_ERROR', message: 'No wallet address found in Privy account' },
         });
       }
 
-      const emailAccount = privyUser.linkedAccounts?.find((a: any) => a.type === 'email') as any;
+      const emailAccount = linkedAccounts.find((a: any) => a.type === 'email');
 
       const result = await userService.findOrCreateByWallet(
         walletAddress,
@@ -406,6 +433,7 @@ export function registerOAuthRoutes(
         user: result.user,
       });
     } catch (err) {
+      console.error('[OAuth] Privy auth unexpected error:', err);
       if (err instanceof AppError) {
         return reply.status(err.statusCode).send(err.toResponse());
       }
