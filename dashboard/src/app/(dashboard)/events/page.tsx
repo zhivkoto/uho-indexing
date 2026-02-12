@@ -43,7 +43,12 @@ function EventExplorerContent() {
 
   const eventTypes = useMemo(() => {
     const program = status?.programs?.find((p) => p.name === activeProgram);
-    return program?.events?.map((e) => ({ value: e, label: e })) || [];
+    if (!program?.events) return [];
+    // Sort events by count descending so the one with most data is first
+    const counts = program.eventCounts || {};
+    return [...program.events]
+      .sort((a, b) => (counts[b] || 0) - (counts[a] || 0))
+      .map((e) => ({ value: e, label: e }));
   }, [status, activeProgram]);
 
   const activeEvent = selectedEvent || eventTypes[0]?.value || '';
