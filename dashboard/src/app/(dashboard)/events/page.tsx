@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
 import type { SortingState } from '@tanstack/react-table';
-import { getStatus, getEvents } from '@/lib/api';
+import { getPrograms, getEvents } from '@/lib/api';
 import { PageContainer } from '@/components/layout/page-container';
 import { FilterBar } from '@/components/events/filter-bar';
 import { EventTable } from '@/components/events/event-table';
@@ -27,16 +27,18 @@ function EventExplorerContent() {
   const [page, setPage] = useState(0);
   const [sorting, setSorting] = useState<SortingState>([{ id: 'slot', desc: true }]);
 
-  const { data: status } = useQuery({
-    queryKey: ['status'],
-    queryFn: getStatus,
+  const { data: programsData } = useQuery({
+    queryKey: ['programs'],
+    queryFn: getPrograms,
     refetchInterval: 10000,
     retry: 1,
   });
 
+  const userPrograms = programsData?.data || [];
+
   const programs = useMemo(
-    () => status?.programs?.map((p) => ({ value: p.name, label: p.name })) || [],
-    [status]
+    () => userPrograms.map((p) => ({ value: p.name, label: p.name })),
+    [userPrograms]
   );
 
   // Empty string = "All Programs" / "All Events" — uses /data/all endpoint
@@ -47,23 +49,21 @@ function EventExplorerContent() {
     if (!activeProgram) {
       // "All Programs" — collect all events across all programs, sorted by count
       const allEvents = new Map<string, number>();
-      for (const p of (status?.programs || [])) {
-        const counts = p.eventCounts || {};
+      for (const p of userPrograms) {
         for (const e of (p.events || [])) {
-          allEvents.set(e, (allEvents.get(e) || 0) + (counts[e] || 0));
+          allEvents.set(e.name, (allEvents.get(e.name) || 0) + (e.count || 0));
         }
       }
       return [...allEvents.entries()]
         .sort((a, b) => b[1] - a[1])
         .map(([e]) => ({ value: e, label: e }));
     }
-    const program = status?.programs?.find((p) => p.name === activeProgram);
+    const program = userPrograms.find((p) => p.name === activeProgram);
     if (!program?.events) return [];
-    const counts = program.eventCounts || {};
     return [...program.events]
-      .sort((a, b) => (counts[b] || 0) - (counts[a] || 0))
-      .map((e) => ({ value: e, label: e }));
-  }, [status, activeProgram]);
+      .sort((a, b) => (b.count || 0) - (a.count || 0))
+      .map((e) => ({ value: e.name, label: e.name }));
+  }, [userPrograms, activeProgram]);
 
   const activeEvent = selectedEvent !== '' ? selectedEvent : (initialEvent || '');
 
@@ -101,7 +101,7 @@ function EventExplorerContent() {
     );
   }, [events?.data, search]);
 
-  const noPrograms = !status?.programs?.length;
+  const noPrograms = !userPrograms.length;
 
   return (
     <div className="space-y-4">
