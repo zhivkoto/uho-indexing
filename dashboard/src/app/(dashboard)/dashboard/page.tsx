@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Code2, Activity, Hash, AlertCircle, Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { getStatus } from '@/lib/api';
+import { getPrograms } from '@/lib/api';
 import { PageContainer } from '@/components/layout/page-container';
 import { StatCard } from '@/components/ui/card';
 import { ThroughputChart } from '@/components/dashboard/throughput-chart';
@@ -12,22 +12,36 @@ import { EventDistribution } from '@/components/dashboard/event-distribution';
 import { ProgramsMini } from '@/components/dashboard/programs-mini';
 import { EmptyState } from '@/components/ui/empty-state';
 import { formatNumber, formatSlot } from '@/lib/utils';
+import type { ProgramStatus } from '@/lib/types';
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { data: status, isLoading } = useQuery({
-    queryKey: ['status'],
-    queryFn: getStatus,
+  const { data: programsData, isLoading } = useQuery({
+    queryKey: ['programs'],
+    queryFn: getPrograms,
     refetchInterval: 5000,
     retry: 1,
   });
 
-  const programCount = status?.programs?.length || 0;
-  const totalEvents = status?.programs?.reduce((sum, p) => {
-    const counts = p.eventCounts ? Object.values(p.eventCounts).reduce((a, b) => a + b, 0) : 0;
-    return sum + counts;
-  }, 0) || 0;
-  const lastSlot = status?.indexer?.currentSlot || 0;
+  const userPrograms = programsData?.data || [];
+  const programCount = userPrograms.length;
+  const totalEvents = userPrograms.reduce((sum, p) => {
+    const counts = p.events?.reduce((a, e) => a + (e.count || 0), 0) || 0;
+    return sum + (p.eventsIndexed || counts);
+  }, 0);
+  const lastSlot = 0; // Per-program slots shown on program cards
+
+  // Convert ProgramInfo[] to ProgramStatus[] for dashboard widgets
+  const statusPrograms: ProgramStatus[] = userPrograms.map((p) => ({
+    name: p.name,
+    programId: p.programId,
+    events: p.events?.filter((e) => e.enabled).map((e) => e.name) || [],
+    eventCounts: Object.fromEntries(
+      (p.events || []).filter((e) => e.enabled).map((e) => [e.name, e.count || 0])
+    ),
+    status: p.status,
+    eventsIndexed: p.eventsIndexed,
+  }));
 
   const noPrograms = !isLoading && programCount === 0;
 
@@ -81,8 +95,8 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_400px] gap-6">
               <LatestEvents />
               <div className="space-y-6">
-                <EventDistribution programs={status?.programs || []} />
-                <ProgramsMini programs={status?.programs || []} />
+                <EventDistribution programs={statusPrograms} />
+                <ProgramsMini programs={statusPrograms} />
               </div>
             </div>
           </>
