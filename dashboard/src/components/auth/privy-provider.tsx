@@ -38,7 +38,7 @@ function PrivyWrapper({ appId, children }: { appId: string; children: ReactNode 
         appearance: {
           theme: 'dark',
           accentColor: '#22D3EE',
-          walletList: ['phantom', 'solflare', 'backpack', 'detected_solana_wallets'],
+          walletList: ['phantom', 'solflare', 'metamask', 'detected_wallets'],
         },
         loginMethods: ['wallet'],
         embeddedWallets: {

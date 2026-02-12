@@ -352,40 +352,41 @@ export function registerOAuthRoutes(
     }
 
     try {
-      // Verify the Privy token via their API
-      const verifyRes = await fetch('https://auth.privy.io/api/v1/token/verify', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${config.privyAppSecret}`,
-          'privy-app-id': config.privyAppId,
-        },
-        body: JSON.stringify({ token: body.token }),
-      });
+      // Verify the Privy token using official SDK
+      const { PrivyClient } = await import('@privy-io/node');
+      const privyClient = new PrivyClient(config.privyAppId, config.privyAppSecret);
 
-      if (!verifyRes.ok) {
-        console.error('[OAuth] Privy verification failed:', await verifyRes.text());
+      let verifiedClaims;
+      try {
+        verifiedClaims = await privyClient.verifyAccessToken(body.token);
+      } catch (verifyErr) {
+        console.error('[OAuth] Privy verification failed:', (verifyErr as Error).message);
         return reply.status(401).send({
           error: { code: 'UNAUTHORIZED', message: 'Invalid Privy token' },
         });
       }
 
-      const privyData = await verifyRes.json() as {
-        userId: string;
-        wallet?: { address: string };
-        email?: { address: string };
-      };
+      // Get user details from Privy to find wallet address
+      const privyUser = await privyClient.getUser(verifiedClaims.userId);
 
-      const walletAddress = privyData.wallet?.address;
+      const walletAccount = privyUser.linkedAccounts?.find(
+        (a: any) => a.type === 'wallet' && a.chainType === 'solana'
+      ) ?? privyUser.linkedAccounts?.find(
+        (a: any) => a.type === 'wallet'
+      );
+
+      const walletAddress = (walletAccount as any)?.address;
       if (!walletAddress) {
         return reply.status(422).send({
-          error: { code: 'VALIDATION_ERROR', message: 'No wallet address found in Privy token' },
+          error: { code: 'VALIDATION_ERROR', message: 'No wallet address found in Privy account' },
         });
       }
 
+      const emailAccount = privyUser.linkedAccounts?.find((a: any) => a.type === 'email') as any;
+
       const result = await userService.findOrCreateByWallet(
         walletAddress,
-        privyData.email?.address ?? null
+        emailAccount?.address ?? null
       );
 
       reply.setCookie('uho_refresh', result.refreshToken, cookieOptions);
