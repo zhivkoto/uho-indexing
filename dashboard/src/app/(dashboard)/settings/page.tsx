@@ -9,7 +9,10 @@ import { ProfileForm } from '@/components/settings/profile-form';
 import { ApiKeyList } from '@/components/settings/api-key-list';
 import { UsageDisplay } from '@/components/settings/usage-display';
 import { getMe } from '@/lib/api';
+import { useAuth } from '@/components/auth/auth-provider';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { LogOut } from 'lucide-react';
 
 const tabs = [
   { value: 'profile', label: 'Profile' },
@@ -19,6 +22,8 @@ const tabs = [
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('profile');
+  const { logout } = useAuth();
+  const router = useRouter();
 
   const { data: profile, isLoading, refetch } = useQuery({
     queryKey: ['user-profile'],
@@ -57,6 +62,20 @@ export default function SettingsPage() {
             )}
           </>
         )}
+
+        {/* Sign Out */}
+        <div className="pt-4 border-t border-[#1E1E26]">
+          <button
+            onClick={async () => {
+              await logout();
+              router.push('/login');
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded-lg transition-colors cursor-pointer"
+          >
+            <LogOut className="w-4 h-4" />
+            Sign out
+          </button>
+        </div>
       </div>
     </PageContainer>
   );
