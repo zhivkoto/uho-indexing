@@ -80,7 +80,7 @@ export function ProgramCard({ program }: ProgramCardProps) {
             Last Slot
           </div>
           <div className="font-mono text-lg font-bold text-[#EDEDEF] mt-0.5">
-            {program.lastSlot ? formatSlot(program.lastSlot, true) : '—'}
+            {program.lastSlot ? formatSlot(program.lastSlot, false) : '—'}
           </div>
         </div>
       </div>
