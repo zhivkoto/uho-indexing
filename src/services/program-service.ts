@@ -460,7 +460,7 @@ export class ProgramService {
               : `${programName}_${toSnakeCase(evt.name)}_ix`;
             
             const countResult = await inUserSchema(this.pool, schemaName, async (client) => {
-              const res = await client.query(`SELECT COUNT(*) as cnt FROM ${tableName}`);
+              const res = await client.query(`SELECT COUNT(*) as cnt FROM "${tableName}"`);
               return res.rows[0]?.cnt ?? 0;
             });
             evt.count = Number(countResult);

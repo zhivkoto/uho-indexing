@@ -16,7 +16,7 @@ import { randomUUID } from 'crypto';
 import type { UhoConfig, ParsedIDL } from '../core/types.js';
 import type { PlatformConfig } from '../core/platform-config.js';
 import { registerEventRoutes, registerInstructionRoutes, registerStatusRoute, registerHealthRoute } from './routes.js';
-import { eventTableName } from '../core/schema-generator.js';
+import { eventTableNameRaw, instructionTableNameRaw, quoteIdent } from '../core/schema-generator.js';
 import { registerAuthRoutes } from './auth-routes.js';
 import { registerOAuthRoutes } from './oauth-routes.js';
 import { registerUserRoutes } from './user-routes.js';
@@ -503,13 +503,15 @@ export async function createPlatformServer(
     for (const prog of targetPrograms) {
       for (const event of prog.events) {
         if (!event.enabled) continue;
-        const tableName = eventTableName(prog.name, event.name);
+        const tableName = event.type === 'instruction'
+          ? instructionTableNameRaw(prog.name, event.name)
+          : eventTableNameRaw(prog.name, event.name);
         try {
           const result = await pool.query(`
             SELECT
               date_trunc('minute', block_time) as bucket,
               COUNT(*)::int as cnt
-            FROM "${userSchema}"."${tableName}"
+            FROM ${quoteIdent(userSchema)}.${quoteIdent(tableName)}
             WHERE block_time > now() - interval '${hours} hours'
             GROUP BY bucket
             ORDER BY bucket
