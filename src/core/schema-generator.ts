@@ -192,11 +192,18 @@ export function generateInstructionTable(programName: string, instruction: Parse
     return `    ${quoteCol(snakeName).padEnd(22)} ${field.sqlType}${nullConstraint}`;
   });
 
-  // Build account columns (all TEXT for pubkeys, quoted)
-  const accountColumns = instruction.accounts.map((accName) => {
+  // Build account columns (all TEXT for pubkeys, quoted) — deduplicate
+  const seenColumns = new Set([
+    'id', 'slot', 'block_time', 'tx_signature', 'ix_index', 'indexed_at',
+    ...instruction.args.map((f) => toSnakeCase(f.name)),
+  ]);
+  const accountColumns: string[] = [];
+  for (const accName of instruction.accounts) {
     const colName = toSnakeCase(accName);
-    return `    ${quoteCol(colName).padEnd(22)} TEXT NOT NULL`;
-  });
+    if (seenColumns.has(colName)) continue; // skip duplicates
+    seenColumns.add(colName);
+    accountColumns.push(`    ${quoteCol(colName).padEnd(22)} TEXT NOT NULL`);
+  }
 
   const columns = [
     '    "id"                   BIGSERIAL PRIMARY KEY',
