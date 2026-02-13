@@ -105,8 +105,9 @@ export function ThroughputChart({ programId, eventsIndexed = 0 }: ThroughputChar
               <YAxis
                 axisLine={false}
                 tickLine={false}
-                tick={{ fill: '#63637A', fontSize: 10 }}
-                width={40}
+                tick={{ fill: '#63637A', fontSize: 10, fontFamily: 'JetBrains Mono' }}
+                width={50}
+                tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v)}
               />
               <Tooltip content={<CustomTooltip />} />
               <Area
