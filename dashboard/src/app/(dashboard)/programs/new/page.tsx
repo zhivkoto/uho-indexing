@@ -404,9 +404,14 @@ export default function AddProgramPage() {
                             Start from slot <span className="text-[#A0A0AB]">(optional)</span>
                           </label>
                           <input
-                            type="number"
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
                             value={startFromSlot}
-                            onChange={(e) => setStartFromSlot(e.target.value)}
+                            onChange={(e) => {
+                              const v = e.target.value.replace(/[^0-9]/g, '');
+                              setStartFromSlot(v);
+                            }}
                             placeholder={minAllowedSlot ? `Min: ${minAllowedSlot.toLocaleString()}` : 'Auto-detect from program deployment'}
                             className={`w-full rounded-lg bg-[#23232B] border px-3 py-2 font-mono text-xs text-[#EDEDEF] placeholder:text-[#63637A] hover:border-[#3A3A48] focus:outline-none transition-colors duration-150 ${
                               startSlotTooOld
@@ -501,6 +506,7 @@ export default function AddProgramPage() {
               <Button
                 onClick={() => createMutation.mutate()}
                 loading={createMutation.isPending}
+                disabled={startSlotTooOld}
               >
                 Create Program
               </Button>
