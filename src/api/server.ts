@@ -471,23 +471,20 @@ export async function createPlatformServer(
 
     // Build time buckets (aligned to bucket interval boundaries)
     const now = new Date();
-    // Round current time down to nearest bucket boundary
-    const currentMinutes = now.getHours() * 60 + now.getMinutes();
-    const roundedMinutes = Math.floor(currentMinutes / bucketMinutes) * bucketMinutes;
-    const alignedNow = new Date(now);
-    alignedNow.setHours(Math.floor(roundedMinutes / 60), roundedMinutes % 60, 0, 0);
+    // Round current time down to nearest bucket boundary using epoch ms
+    const bucketMs = bucketMinutes * 60000;
+    const alignedNow = new Date(Math.floor(now.getTime() / bucketMs) * bucketMs);
 
     const buckets: { time: string; iso: string; value: number }[] = [];
-    const bucketMap = new Map<string, { time: string; iso: string; value: number }>();
+    const bucketMap = new Map<number, { time: string; iso: string; value: number }>();
     for (let i = bucketCount - 1; i >= 0; i--) {
       const bucketTime = new Date(alignedNow.getTime() - i * bucketMinutes * 60 * 1000);
       const iso = bucketTime.toISOString();
       const hh = String(bucketTime.getUTCHours()).padStart(2, '0');
       const mm = String(bucketTime.getUTCMinutes()).padStart(2, '0');
-      const key = `${hh}:${mm}`;
-      const bucket = { time: key, iso, value: 0 };
+      const bucket = { time: `${hh}:${mm}`, iso, value: 0 };
       buckets.push(bucket);
-      bucketMap.set(key, bucket);
+      bucketMap.set(bucketTime.getTime(), bucket);
     }
 
     // Aggregate events from all enabled event tables
@@ -509,11 +506,9 @@ export async function createPlatformServer(
           `);
           for (const row of result.rows) {
             const rowTime = new Date(row.bucket as string);
-            const hh = String(rowTime.getUTCHours()).padStart(2, '0');
-            // Round minutes to bucket boundary
-            const roundedMin = Math.floor(rowTime.getUTCMinutes() / bucketMinutes) * bucketMinutes;
-            const key = `${hh}:${String(roundedMin).padStart(2, '0')}`;
-            const bucket = bucketMap.get(key);
+            // Round down to bucket boundary (epoch ms)
+            const roundedMs = Math.floor(rowTime.getTime() / (bucketMinutes * 60000)) * (bucketMinutes * 60000);
+            const bucket = bucketMap.get(roundedMs);
             if (bucket) bucket.value += row.cnt as number;
           }
         } catch {
