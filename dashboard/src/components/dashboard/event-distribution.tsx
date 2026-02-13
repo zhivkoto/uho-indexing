@@ -49,7 +49,7 @@ export function EventDistribution({ programs }: EventDistributionProps) {
         name: event,
         count: p.eventCounts?.[event] || 0,
       }))
-    ).slice(0, 8);
+    ).sort((a, b) => b.count - a.count).slice(0, 5);
   }, [programs]);
 
   return (
