@@ -408,51 +408,25 @@ export async function createPlatformServer(
 
     const programs = await programService.listPrograms(auth.userId);
 
-    // Build eventCounts for each program by querying user schema tables
-    const programsWithCounts = await Promise.all(
-      programs.map(async (p) => {
-        const eventCounts: Record<string, number> = {};
-        const userSchema = `u_${auth.userId.replace(/-/g, '').slice(0, 8)}`;
-
-        for (const event of p.events) {
-          if (event.enabled) {
-            const tableName = eventTableName(p.name, event.name);
-            try {
-              const countResult = await pool.query(
-                `SELECT COUNT(*)::int as count FROM "${userSchema}"."${tableName}"`
-              );
-              eventCounts[event.name] = countResult.rows[0]?.count ?? 0;
-            } catch {
-              eventCounts[event.name] = 0;
-            }
-          } else {
-            eventCounts[event.name] = 0;
-          }
+    // Build eventCounts from listPrograms data (which already has correct counts for both events and instructions)
+    const programsWithCounts = programs.map((p) => {
+      const eventCounts: Record<string, number> = {};
+      for (const event of p.events) {
+        if (event.enabled) {
+          eventCounts[event.name] = event.count ?? 0;
         }
+      }
 
-        // Get lastSlot from user's _uho_state table
-        let lastSlot = 0;
-        try {
-          const stateResult = await pool.query(
-            `SELECT last_slot FROM "${userSchema}"."_uho_state" WHERE program_id = $1`,
-            [p.programId]
-          );
-          lastSlot = stateResult.rows[0]?.last_slot ? Number(stateResult.rows[0].last_slot) : 0;
-        } catch {
-          // Table might not exist yet
-        }
-
-        return {
-          name: p.name,
-          programId: p.programId,
-          status: p.status,
-          events: p.events.filter((e) => e.enabled).map((e) => e.name),
-          eventCounts,
-          eventsIndexed: Object.values(eventCounts).reduce((a, b) => a + b, 0),
-          lastSlot,
-        };
-      })
-    );
+      return {
+        name: p.name,
+        programId: p.programId,
+        status: p.status,
+        events: p.events.filter((e) => e.enabled).map((e) => e.name),
+        eventCounts,
+        eventsIndexed: Object.values(eventCounts).reduce((a, b) => a + b, 0),
+        lastSlot: p.lastSlot ?? 0,
+      };
+    });
 
     // Compute overall currentSlot as max of all program lastSlots
     const currentSlot = programsWithCounts.reduce((max, p) => Math.max(max, p.lastSlot || 0), 0);
