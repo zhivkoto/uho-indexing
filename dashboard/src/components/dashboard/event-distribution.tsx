@@ -74,7 +74,7 @@ export function EventDistribution({ programs }: EventDistributionProps) {
               axisLine={false}
               width={160}
             />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
             <Bar dataKey="count" radius={[0, 4, 4, 0]}>
               {data.map((_, index) => (
                 <Cell key={index} fill={COLORS[index % COLORS.length]} fillOpacity={0.8} />
