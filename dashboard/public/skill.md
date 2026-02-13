@@ -747,7 +747,6 @@ curl -X DELETE "$BASE/api/v1/webhooks/{id}" \
 | Resource | Limit |
 |----------|-------|
 | Programs | 3 |
-| Events indexed | 5,000 |
 | API calls/month | 50,000 |
 | WebSocket connections | 5 |
 | Custom views | 3 |
