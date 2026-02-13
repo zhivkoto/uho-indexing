@@ -18,9 +18,31 @@ import { toSnakeCase } from '../core/idl-parser.js';
 /**
  * Registers the /api/v1/health endpoint.
  */
-export function registerHealthRoute(app: FastifyInstance): void {
+export function registerHealthRoute(app: FastifyInstance, rpcUrl?: string): void {
+  let cachedSlot = 0;
+  let slotFetchedAt = 0;
+
   app.get('/api/v1/health', async () => {
-    return { status: 'ok', timestamp: new Date().toISOString() };
+    // Cache slot for 10s to avoid RPC spam
+    if (rpcUrl && Date.now() - slotFetchedAt > 10_000) {
+      try {
+        const res = await fetch(rpcUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getSlot' }),
+        });
+        const json = await res.json() as { result?: number };
+        if (json.result) {
+          cachedSlot = json.result;
+          slotFetchedAt = Date.now();
+        }
+      } catch { /* ignore */ }
+    }
+    return {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      ...(cachedSlot ? { currentSlot: cachedSlot } : {}),
+    };
   });
 }
 

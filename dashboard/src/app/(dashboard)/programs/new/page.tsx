@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, ArrowRight, Upload, Search, Check, AlertCircle, Info } from 'lucide-react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import Link from 'next/link';
-import { discoverIdl, createProgram } from '@/lib/api';
+import { discoverIdl, createProgram, getHealth } from '@/lib/api';
 import { PageContainer } from '@/components/layout/page-container';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -34,6 +34,17 @@ export default function AddProgramPage() {
   const [discovering, setDiscovering] = useState(false);
   const [includeHistoricalData, setIncludeHistoricalData] = useState(false);
   const [startFromSlot, setStartFromSlot] = useState('');
+
+  const DEMO_SLOT_LIMIT = 2_000;
+  const { data: health } = useQuery({
+    queryKey: ['health'],
+    queryFn: getHealth,
+    refetchInterval: 30_000,
+    retry: 1,
+  });
+  const currentSlot = (health as Record<string, unknown>)?.currentSlot as number | undefined;
+  const minAllowedSlot = currentSlot ? currentSlot - DEMO_SLOT_LIMIT : undefined;
+  const startSlotTooOld = !!(startFromSlot && minAllowedSlot && Number(startFromSlot) < minAllowedSlot);
 
   // Step 1: Discover IDL
   const handleDiscover = async () => {
@@ -385,10 +396,10 @@ export default function AddProgramPage() {
                         <div className="flex items-start gap-2.5 p-2.5 rounded-lg bg-[rgba(34,211,238,0.06)] border border-[rgba(34,211,238,0.12)]">
                           <Info className="w-3.5 h-3.5 text-[#22D3EE] mt-0.5 shrink-0" />
                           <p className="text-xs text-[#A0A0AB] leading-relaxed">
-                            <span className="text-[#22D3EE] font-medium">Demo limit:</span> backfill covers the last ~2,000 slots (~13 minutes of chain history). Full archival backfill available in production.
+                            <span className="text-[#22D3EE] font-medium">Demo limit:</span> backfill covers the last ~{DEMO_SLOT_LIMIT.toLocaleString()} slots (~13 minutes of chain history). Full archival backfill available in production.
                           </p>
                         </div>
-                        <div className="p-2.5 rounded-lg bg-[#16161A] border border-[#1E1E26]">
+                        <div className={`p-2.5 rounded-lg bg-[#16161A] border ${startSlotTooOld ? 'border-red-500/40' : 'border-[#1E1E26]'}`}>
                           <label className="text-xs text-[#63637A] block mb-1.5">
                             Start from slot <span className="text-[#A0A0AB]">(optional)</span>
                           </label>
@@ -396,12 +407,26 @@ export default function AddProgramPage() {
                             type="number"
                             value={startFromSlot}
                             onChange={(e) => setStartFromSlot(e.target.value)}
-                            placeholder="Auto-detect from program deployment"
-                            className="w-full rounded-lg bg-[#23232B] border border-[#2A2A35] px-3 py-2 font-mono text-xs text-[#EDEDEF] placeholder:text-[#63637A] hover:border-[#3A3A48] focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/50 focus:outline-none transition-colors duration-150"
+                            placeholder={minAllowedSlot ? `Min: ${minAllowedSlot.toLocaleString()}` : 'Auto-detect from program deployment'}
+                            className={`w-full rounded-lg bg-[#23232B] border px-3 py-2 font-mono text-xs text-[#EDEDEF] placeholder:text-[#63637A] hover:border-[#3A3A48] focus:outline-none transition-colors duration-150 ${
+                              startSlotTooOld
+                                ? 'border-red-500/60 focus:border-red-500 focus:ring-1 focus:ring-red-500/50'
+                                : 'border-[#2A2A35] focus:border-[#22D3EE] focus:ring-1 focus:ring-[#22D3EE]/50'
+                            }`}
                           />
-                          <p className="text-[10px] text-[#63637A] mt-1">
-                            Useful if the program was upgraded and you only want events from a specific version.
-                          </p>
+                          {startSlotTooOld ? (
+                            <p className="text-[10px] text-red-400 mt-1 flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3" />
+                              Slot too far back. Minimum allowed: <span className="font-mono font-medium">{minAllowedSlot?.toLocaleString()}</span> (current: {currentSlot?.toLocaleString()})
+                            </p>
+                          ) : (
+                            <p className="text-[10px] text-[#63637A] mt-1">
+                              {minAllowedSlot
+                                ? <>Must be within last {DEMO_SLOT_LIMIT.toLocaleString()} slots (min: <span className="font-mono">{minAllowedSlot.toLocaleString()}</span>)</>
+                                : 'Useful if the program was upgraded and you only want events from a specific version.'
+                              }
+                            </p>
+                          )}
                         </div>
                       </div>
                     )}
@@ -416,7 +441,7 @@ export default function AddProgramPage() {
               </Button>
               <Button
                 onClick={() => setStep('review')}
-                disabled={enabledEvents.length === 0}
+                disabled={enabledEvents.length === 0 || startSlotTooOld}
               >
                 Review <ArrowRight className="w-4 h-4" />
               </Button>

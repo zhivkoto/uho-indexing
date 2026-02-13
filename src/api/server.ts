@@ -75,7 +75,7 @@ export async function createServer(
   });
 
   // Register health and status endpoints
-  registerHealthRoute(app);
+  registerHealthRoute(app, config.rpcUrl);
   registerStatusRoute(app, pool, config, parsedIdls);
 
   // Register auto-generated event routes for each program's events
@@ -321,12 +321,28 @@ export async function createPlatformServer(
     return app.swagger();
   });
 
-  // Health (no auth)
-  app.get('/api/v1/health', async () => ({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    version: '0.1.0',
-  }));
+  // Health (no auth) — includes current Solana slot
+  let cachedSlot = 0;
+  let slotFetchedAt = 0;
+  app.get('/api/v1/health', async () => {
+    if (config.rpcUrl && Date.now() - slotFetchedAt > 10_000) {
+      try {
+        const res = await fetch(config.rpcUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getSlot' }),
+        });
+        const json = await res.json() as { result?: number };
+        if (json.result) { cachedSlot = json.result; slotFetchedAt = Date.now(); }
+      } catch { /* ignore */ }
+    }
+    return {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      version: '0.1.0',
+      ...(cachedSlot ? { currentSlot: cachedSlot } : {}),
+    };
+  });
 
   // Auth routes (no auth required)
   registerAuthRoutes(app, userService, config);
