@@ -477,14 +477,15 @@ export async function createPlatformServer(
     const alignedNow = new Date(now);
     alignedNow.setHours(Math.floor(roundedMinutes / 60), roundedMinutes % 60, 0, 0);
 
-    const buckets: { time: string; value: number }[] = [];
-    const bucketMap = new Map<string, { time: string; value: number }>();
+    const buckets: { time: string; iso: string; value: number }[] = [];
+    const bucketMap = new Map<string, { time: string; iso: string; value: number }>();
     for (let i = bucketCount - 1; i >= 0; i--) {
       const bucketTime = new Date(alignedNow.getTime() - i * bucketMinutes * 60 * 1000);
-      const hh = String(bucketTime.getHours()).padStart(2, '0');
-      const mm = String(bucketTime.getMinutes()).padStart(2, '0');
+      const iso = bucketTime.toISOString();
+      const hh = String(bucketTime.getUTCHours()).padStart(2, '0');
+      const mm = String(bucketTime.getUTCMinutes()).padStart(2, '0');
       const key = `${hh}:${mm}`;
-      const bucket = { time: key, value: 0 };
+      const bucket = { time: key, iso, value: 0 };
       buckets.push(bucket);
       bucketMap.set(key, bucket);
     }
@@ -508,9 +509,9 @@ export async function createPlatformServer(
           `);
           for (const row of result.rows) {
             const rowTime = new Date(row.bucket as string);
-            const hh = String(rowTime.getHours()).padStart(2, '0');
+            const hh = String(rowTime.getUTCHours()).padStart(2, '0');
             // Round minutes to bucket boundary
-            const roundedMin = Math.floor(rowTime.getMinutes() / bucketMinutes) * bucketMinutes;
+            const roundedMin = Math.floor(rowTime.getUTCMinutes() / bucketMinutes) * bucketMinutes;
             const key = `${hh}:${String(roundedMin).padStart(2, '0')}`;
             const bucket = bucketMap.get(key);
             if (bucket) bucket.value += row.cnt as number;

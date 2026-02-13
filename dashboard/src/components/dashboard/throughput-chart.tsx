@@ -54,8 +54,13 @@ export function ThroughputChart({ programId, eventsIndexed = 0 }: ThroughputChar
     retry: 1,
   });
 
-  const chartData = metricsData?.data || [];
-  const hasData = chartData.length > 0 && chartData.some(d => d.value > 0);
+  const chartData = (metricsData?.data || []).map((d: { time: string; iso?: string; value: number }) => ({
+    ...d,
+    localTime: d.iso
+      ? new Date(d.iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+      : d.time,
+  }));
+  const hasData = chartData.length > 0 && chartData.some((d: { value: number }) => d.value > 0);
   const currentRate = hasData ? (chartData[chartData.length - 1]?.value || 0) : 0;
 
   return (
@@ -95,7 +100,7 @@ export function ThroughputChart({ programId, eventsIndexed = 0 }: ThroughputChar
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#1E1E26" vertical={false} />
               <XAxis
-                dataKey="time"
+                dataKey="localTime"
                 axisLine={false}
                 tickLine={false}
                 tick={{ fill: '#63637A', fontSize: 10 }}
