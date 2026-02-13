@@ -104,10 +104,11 @@ CREATE INDEX IF NOT EXISTS idx_tx_logs_slot ON _tx_logs (slot);`.trim();
  * Example: "input_amount BIGINT NOT NULL"
  */
 function fieldToColumn(field: ParsedField): string {
-  const nullConstraint = field.nullable ? '' : ' NOT NULL';
+  // Event fields are always nullable — decoded data may not contain all fields
+  // (e.g. IDL upgrades adding new fields to existing events)
   const snakeName = toSnakeCase(field.name);
   const quotedName = `"${snakeName}"`;
-  return `    ${quotedName.padEnd(22)} ${field.sqlType}${nullConstraint}`;
+  return `    ${quotedName.padEnd(22)} ${field.sqlType}`;
 }
 
 /**
@@ -187,9 +188,8 @@ export function generateInstructionTable(programName: string, instruction: Parse
 
   // Build arg columns (snake_case and quoted to handle reserved words)
   const argColumns = instruction.args.map((field) => {
-    const nullConstraint = field.nullable ? '' : ' NOT NULL';
     const snakeName = toSnakeCase(field.name);
-    return `    ${quoteCol(snakeName).padEnd(22)} ${field.sqlType}${nullConstraint}`;
+    return `    ${quoteCol(snakeName).padEnd(22)} ${field.sqlType}`;
   });
 
   // Build account columns (all TEXT for pubkeys, quoted) — deduplicate
