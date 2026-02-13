@@ -312,6 +312,37 @@ export class ProgramService {
     if (result.rows.length === 0) {
       throw new NotFoundError('Program not found');
     }
+
+    // Clean up associated views
+    const views = await this.pool.query(
+      `SELECT id, name FROM user_views WHERE user_program_id = $1 AND user_id = $2`,
+      [programId, userId]
+    );
+    if (views.rows.length > 0) {
+      // Get user schema
+      const userResult = await this.pool.query('SELECT schema_name FROM users WHERE id = $1', [userId]);
+      const schemaName = userResult.rows[0]?.schema_name as string | undefined;
+
+      if (schemaName) {
+        for (const view of views.rows) {
+          try {
+            const safeName = `"v_${(view.name as string).replace(/[^a-z0-9_]/g, '')}"`;
+            await inUserSchema(this.pool, schemaName, async (client) => {
+              await client.query(`DROP MATERIALIZED VIEW IF EXISTS ${safeName}`);
+            });
+          } catch {
+            // Best effort — view might already be gone
+          }
+        }
+      }
+
+      // Mark views as disabled
+      await this.pool.query(
+        `UPDATE user_views SET status = 'disabled', updated_at = now() WHERE user_program_id = $1 AND user_id = $2`,
+        [programId, userId]
+      );
+    }
+
     await this.refreshActiveSubscriptions();
   }
 
