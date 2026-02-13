@@ -190,7 +190,7 @@ function Hero() {
 
           <p className="text-lg md:text-xl text-uho-text-secondary max-w-2xl mx-auto mb-10 leading-relaxed">
             Feed it an IDL, get a typed API in minutes. Postgres tables, REST endpoints,
-            and WebSocket subscriptions — auto-generated from your program&apos;s events.
+            and WebSocket subscriptions — auto-generated from your program&apos;s events and instructions.
           </p>
 
           <div className="flex items-center justify-center gap-4 flex-wrap">
@@ -227,12 +227,12 @@ const features = [
   {
     icon: Database,
     title: 'IDL → Typed Schema',
-    desc: 'Upload your Anchor IDL, get PostgreSQL tables with correct types for every event field. No manual migrations.',
+    desc: 'Upload your Anchor IDL, get PostgreSQL tables with correct types for every event and instruction. No manual migrations.',
   },
   {
     icon: Zap,
     title: 'Instant REST APIs',
-    desc: 'Auto-generated endpoints with filtering, pagination, and sorting. Query events by any field out of the box.',
+    desc: 'Auto-generated endpoints with filtering, pagination, and sorting. Query events, instructions, and transaction logs by any field out of the box.',
   },
   {
     icon: Radio,
@@ -283,8 +283,8 @@ function Features() {
 
 /* ─── How It Works ─── */
 const steps = [
-  { icon: Upload, num: '01', title: 'Upload Your IDL', desc: 'Paste or upload your Anchor IDL file. Uho parses every event type and field automatically.' },
-  { icon: Cpu, num: '02', title: 'Auto-Index Events', desc: 'Tables are created, indexing starts immediately. Historical backfill runs in parallel.' },
+  { icon: Upload, num: '01', title: 'Upload Your IDL', desc: 'Paste or upload your Anchor IDL file. Uho parses every event and instruction type automatically.' },
+  { icon: Cpu, num: '02', title: 'Auto-Index Everything', desc: 'Event and instruction tables are created, indexing starts immediately. Historical backfill runs in parallel.' },
   { icon: Search, num: '03', title: 'Query & Subscribe', desc: 'Hit your REST endpoints or open a WebSocket. Filter, paginate, aggregate — production-ready.' },
 ];
 

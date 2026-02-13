@@ -1,14 +1,14 @@
 ---
 name: uho-indexing
 version: 1.0.0
-description: IDL-driven Solana event indexer — feed it an Anchor IDL, get a typed API in minutes.
+description: IDL-driven Solana event and instruction indexer — feed it an Anchor IDL, get a typed API in minutes.
 homepage: https://www.uhoindexing.com
 metadata: {"category":"infra","api_base":"https://api.uhoindexing.com"}
 ---
 
 # Uho — Solana IDL-Driven Event Indexer
 
-Uho is an infrastructure service that indexes Solana program events automatically. Give it an Anchor IDL and a program ID, and it creates typed database tables, polls the chain for transactions, decodes events, and serves them through a REST API with filtering, pagination, and real-time WebSocket streaming. No code generation, no manual schema writing, no custom decoders — just point it at an IDL and query your data.
+Uho is an infrastructure service that indexes Solana program events and instructions automatically. Give it an Anchor IDL and a program ID, and it creates typed database tables, polls the chain for transactions, decodes events, and serves them through a REST API with filtering, pagination, and real-time WebSocket streaming. Uho also indexes program instructions — decoded with full account and argument data. No code generation, no manual schema writing, no custom decoders — just point it at an IDL and query your data.
 
 ## Quick Start
 
@@ -52,14 +52,15 @@ curl -s -X POST "$BASE/api/v1/programs" \
     "chain": "solana-mainnet",
     "events": [
       {"name": "TradeEvent", "type": "event", "enabled": true},
-      {"name": "CreateEvent", "type": "event", "enabled": true}
+      {"name": "CreateEvent", "type": "event", "enabled": true},
+      {"name": "deposit", "type": "instruction", "enabled": true}
     ]
   }'
 
 # Response: {"id":"uuid","programId":"6EF8...","name":"pump_fun","status":"provisioning","createdAt":"..."}
 
 # 5. Check indexing status
-curl -s "$BASE/api/v1/status" \
+curl -s "$BASE/api/v1/programs" \
   -H "X-API-Key: $API_KEY"
 
 # 6. Query events
@@ -214,6 +215,8 @@ curl -X POST "$BASE/api/v1/programs" \
 **Required fields:** `programId`, `idl`  
 **Optional fields:** `name`, `chain` (default: `solana-mainnet`), `events` (whitelist), `config`
 
+> **Events & Instructions:** The `events` array supports both `"type": "event"` (program events/logs) and `"type": "instruction"` (decoded instructions). Instructions get their own `_ix` suffixed tables (e.g., `deposit_ix`) with columns for each account and argument defined in the IDL.
+
 **Response (201):**
 ```json
 {
@@ -235,6 +238,8 @@ curl -X POST "$BASE/api/v1/programs/discover-idl" \
 ```
 
 **Response:** `{"found": true, "source": "on-chain", "idl": {...}}` or `{"found": false, ...}`
+
+> **IDL Discovery:** Uho tries the on-chain Anchor IDL account first, then falls back to the Solana Explorer API.
 
 #### List Programs
 
@@ -375,6 +380,25 @@ curl "$BASE/api/v1/data/pump_fun/trade_event/5K2Nq..." \
   -H "X-API-Key: $API_KEY"
 ```
 
+### Transaction Logs
+
+```bash
+curl "$BASE/api/v1/tx-logs/{txSignature}" \
+  -H "X-API-Key: $API_KEY"
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "tx_signature": "5K2Nq...",
+    "slot": 312500000,
+    "log_messages": ["Program 6EF8... invoke [1]", "Program log: Instruction: Buy"],
+    "indexed_at": "2025-01-15T10:31:00.000Z"
+  }
+}
+```
+
 ### Schema Introspection
 
 #### List All Events for a Program
@@ -422,7 +446,7 @@ curl -X POST "$BASE/api/v1/views" \
   -d '{
     "userProgramId": "program-uuid",
     "name": "top_traders",
-    "source": "trade_event",
+    "source": "trade_event",  // can also be an instruction name, e.g. "deposit_ix"
     "definition": {
       "groupBy": "user",
       "select": {
@@ -435,6 +459,8 @@ curl -X POST "$BASE/api/v1/views" \
     "refreshIntervalMs": 60000
   }'
 ```
+
+> **Note:** The `source` field can reference either an event (e.g., `trade_event`) or an instruction table (e.g., `deposit_ix`). Field names accept both camelCase and snake_case.
 
 **Response (201):**
 ```json
@@ -460,32 +486,29 @@ curl "$BASE/api/v1/views" -H "X-API-Key: $API_KEY"
 curl -X DELETE "$BASE/api/v1/views/{id}" -H "X-API-Key: $API_KEY"
 ```
 
-### Status
+### Programs Status
 
 ```bash
-curl "$BASE/api/v1/status" -H "X-API-Key: $API_KEY"
+curl "$BASE/api/v1/programs" -H "X-API-Key: $API_KEY"
 ```
 
 **Response:**
 ```json
 {
-  "indexer": {
-    "status": "running",
-    "version": "0.1.0",
-    "currentSlot": 312500000,
-    "chainHeadSlot": 312500050,
-    "lagSlots": 50,
-    "lagSeconds": 20
-  },
-  "programs": [
+  "data": [
     {
+      "id": "uuid",
       "name": "pump_fun",
       "programId": "6EF8...",
       "status": "running",
+      "chain": "solana-mainnet",
       "events": ["TradeEvent", "CreateEvent"],
+      "instructions": ["deposit"],
       "eventCounts": {"TradeEvent": 15234, "CreateEvent": 892},
+      "instructionCounts": {"deposit": 4521},
       "eventsIndexed": 16126,
-      "lastSlot": 312500000
+      "lastSlot": 312500000,
+      "createdAt": "2025-01-15T10:30:00.000Z"
     }
   ]
 }
@@ -723,8 +746,8 @@ curl -X DELETE "$BASE/api/v1/webhooks/{id}" \
 
 | Resource | Limit |
 |----------|-------|
-| Programs | 1 |
-| Events indexed | 1,000 |
+| Programs | 3 |
+| Events indexed | 5,000 |
 | API calls/month | 50,000 |
 | WebSocket connections | 5 |
 | Custom views | 3 |
@@ -838,7 +861,7 @@ curl -s -X POST "$BASE/api/v1/programs" \
 
 # 5. Wait for provisioning, then check status
 sleep 10
-curl -s "$BASE/api/v1/status" -H "X-API-Key: $API_KEY" | jq '.'
+curl -s "$BASE/api/v1/programs" -H "X-API-Key: $API_KEY" | jq '.'
 
 # 6. Check what fields are available
 curl -s "$BASE/api/v1/schema/pump_fun/trade_event" -H "X-API-Key: $API_KEY" | jq '.fields[] | .name'
