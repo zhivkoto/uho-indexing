@@ -42,7 +42,7 @@ export default function AddProgramPage() {
     refetchInterval: 30_000,
     retry: 1,
   });
-  const currentSlot = (health as Record<string, unknown>)?.currentSlot as number | undefined;
+  const currentSlot = (health as unknown as Record<string, unknown> | undefined)?.currentSlot as number | undefined;
   const minAllowedSlot = currentSlot ? currentSlot - DEMO_SLOT_LIMIT : undefined;
   const startSlotTooOld = !!(startFromSlot && minAllowedSlot && Number(startFromSlot) < minAllowedSlot);
 
