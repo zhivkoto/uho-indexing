@@ -33,7 +33,8 @@ export class FanoutWriter {
     events: DecodedEvent[],
     instructions: DecodedInstruction[],
     subscribers: SubscriberInfo[],
-    txLogs?: Array<{ txSignature: string; slot: number; logMessages: string[] }>
+    txLogs?: Array<{ txSignature: string; slot: number; logMessages: string[] }>,
+    rawTransactions?: Array<{ txSignature: string; slot: number; blockTime: number | null; programId: string; rawTx: unknown }>
   ): Promise<WriteResult> {
     const result: WriteResult = { totalWritten: 0, perSubscriber: {} };
 
@@ -82,6 +83,28 @@ export class FanoutWriter {
               } catch {
                 // _tx_logs table might not exist yet for older schemas — skip
               }
+            }
+          }
+
+          // Write raw transactions if subscriber has raw_transactions_enabled
+          if (sub.rawTransactions && rawTransactions?.length) {
+            try {
+              for (const rawTx of rawTransactions) {
+                await client.query(
+                  `INSERT INTO _raw_transactions (tx_signature, slot, block_time, program_id, raw_tx)
+                   VALUES ($1, $2, $3, $4, $5)
+                   ON CONFLICT (tx_signature) DO NOTHING`,
+                  [
+                    rawTx.txSignature,
+                    rawTx.slot,
+                    rawTx.blockTime ? new Date(rawTx.blockTime * 1000).toISOString() : null,
+                    rawTx.programId,
+                    JSON.stringify(rawTx.rawTx),
+                  ]
+                );
+              }
+            } catch {
+              // _raw_transactions table might not exist yet for older schemas — skip
             }
           }
 
