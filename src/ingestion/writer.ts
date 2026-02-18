@@ -306,6 +306,59 @@ export class EventWriter {
   }
 }
 
+  /**
+   * Writes a batch of raw transaction JSON records to the _raw_transactions table.
+   * Uses ON CONFLICT DO NOTHING for dedup (same tx can appear in multiple polling cycles).
+   * Returns the number of rows actually inserted.
+   */
+  async writeRawTransactions(
+    rawTxs: Array<{
+      txSignature: string;
+      slot: number;
+      blockTime: number | null;
+      programId: string;
+      rawTx: unknown;
+    }>
+  ): Promise<number> {
+    if (rawTxs.length === 0) return 0;
+
+    const client = await this.pool.connect();
+    let written = 0;
+
+    try {
+      await client.query('BEGIN');
+
+      for (const tx of rawTxs) {
+        const blockTimeValue = tx.blockTime
+          ? new Date(tx.blockTime * 1000).toISOString()
+          : null;
+
+        const result = await client.query(
+          `INSERT INTO _raw_transactions (tx_signature, slot, block_time, program_id, raw_tx)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (tx_signature) DO NOTHING`,
+          [
+            tx.txSignature,
+            tx.slot,
+            blockTimeValue,
+            tx.programId,
+            JSON.stringify(tx.rawTx),
+          ]
+        );
+        if ((result.rowCount ?? 0) > 0) written++;
+      }
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw new Error(`Failed to write raw transactions batch: ${(err as Error).message}`);
+    } finally {
+      client.release();
+    }
+
+    return written;
+  }
+
 // =============================================================================
 // Utilities
 // =============================================================================
