@@ -333,6 +333,30 @@ export async function getTxLogs(
   return fetchApi(`/api/v1/tx-logs/${txSignature}`);
 }
 
+// ─── Raw Transactions ─────────────────────────────────────────
+export async function getRawTransactions(
+  program: string,
+  params?: EventQueryParams,
+): Promise<EventListResponse> {
+  const searchParams = new URLSearchParams();
+  if (params) {
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') {
+        searchParams.set(key, String(value));
+      }
+    });
+  }
+  const qs = searchParams.toString();
+  return fetchApi(`/api/v1/data/${program}/raw-transactions${qs ? `?${qs}` : ''}`);
+}
+
+export async function getRawTransaction(
+  program: string,
+  txSignature: string,
+): Promise<{ data: Record<string, unknown> | null }> {
+  return fetchApi(`/api/v1/data/${program}/raw-transactions/${txSignature}`);
+}
+
 // ─── Views ────────────────────────────────────────────────────
 export async function getViews(): Promise<{ data: ViewInfo[] }> {
   return fetchApi('/api/v1/views');

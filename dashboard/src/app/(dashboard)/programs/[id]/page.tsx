@@ -3,7 +3,7 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { ArrowLeft, Pause, Play, Trash2, Copy, Check, ExternalLink, Square, Info } from 'lucide-react';
+import { ArrowLeft, Pause, Play, Trash2, Copy, Check, ExternalLink, Square, Info, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { useState } from 'react';
 import { getProgram, pauseProgram, resumeProgram, archiveProgram, updateProgram, retryBackfill, cancelBackfill } from '@/lib/api';
@@ -80,6 +80,18 @@ export default function ProgramDetailPage() {
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to update event'),
   });
+
+  const toggleRawTxMut = useMutation({
+    mutationFn: (enabled: boolean) =>
+      updateProgram(programId, { config: { raw_transactions_enabled: enabled } }),
+    onSuccess: (_data, enabled) => {
+      queryClient.invalidateQueries({ queryKey: ['program', programId] });
+      toast.success(enabled ? 'Raw transaction storage enabled' : 'Raw transaction storage disabled');
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to update setting'),
+  });
+
+  const rawTxEnabled = !!(program?.config?.raw_transactions_enabled);
 
   const handleCopy = async () => {
     if (program) {
@@ -345,6 +357,31 @@ export default function ProgramDetailPage() {
                 </div>
               ))}
             </div>
+            {/* Raw Transaction Storage toggle */}
+            <h3 className="text-[15px] font-semibold text-[#EDEDEF] mt-6 mb-4">Raw Transaction Storage</h3>
+            <div className="flex items-center justify-between py-3 px-4 rounded-lg bg-[#16161A] border border-[#1E1E26]">
+              <div className="flex-1 mr-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-sm font-medium text-[#EDEDEF]">Store Raw Transactions</span>
+                  {rawTxEnabled && <Badge variant="success">Active</Badge>}
+                </div>
+                <p className="text-xs text-[#63637A] mb-2">
+                  Store the complete parsed transaction JSON (all instructions, accounts, balances, logs) for every matched transaction.
+                </p>
+                <div className="flex items-start gap-2 p-2 rounded-md bg-[rgba(234,179,8,0.06)] border border-[rgba(234,179,8,0.15)]">
+                  <AlertTriangle className="w-3.5 h-3.5 text-yellow-500 mt-0.5 shrink-0" />
+                  <span className="text-xs text-yellow-500/90">⚠️ Stores full transaction data. May significantly increase storage usage (5–50KB per transaction).</span>
+                </div>
+              </div>
+              <button
+                onClick={() => toggleRawTxMut.mutate(!rawTxEnabled)}
+                disabled={toggleRawTxMut.isPending}
+                className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${rawTxEnabled ? 'bg-[#22D3EE]' : 'bg-[#2A2A35]'}`}
+              >
+                <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${rawTxEnabled ? 'left-5' : 'left-0.5'}`} />
+              </button>
+            </div>
+
             {Object.keys(program.config || {}).length > 0 && (
               <>
                 <h3 className="text-[15px] font-semibold text-[#EDEDEF] mt-6 mb-4">Advanced Config</h3>

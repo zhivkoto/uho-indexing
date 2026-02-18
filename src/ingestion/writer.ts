@@ -304,7 +304,6 @@ export class EventWriter {
     // rowCount is 0 when the insert was skipped due to ON CONFLICT DO NOTHING
     return (result.rowCount ?? 0) > 0;
   }
-}
 
   /**
    * Writes a batch of raw transaction JSON records to the _raw_transactions table.
@@ -358,6 +357,7 @@ export class EventWriter {
 
     return written;
   }
+}
 
 // =============================================================================
 // Utilities
