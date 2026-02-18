@@ -8,7 +8,7 @@
 import type pg from 'pg';
 import type { UserProgram, UserProgramEvent, AnchorIDL } from '../core/types.js';
 import { parseIDL, toSnakeCase } from '../core/idl-parser.js';
-import { generateEventTable, generateInstructionTable, generateMetadataTable, applySchema } from '../core/schema-generator.js';
+import { generateEventTable, generateInstructionTable, generateMetadataTable, generateCpiTransfersTable, generateBalanceChangesTable, applySchema } from '../core/schema-generator.js';
 import { inUserSchema } from '../core/db.js';
 import { NotFoundError, ConflictError, ForbiddenError, ValidationError } from '../core/errors.js';
 import { FREE_TIER_LIMITS } from '../core/platform-config.js';
@@ -257,8 +257,13 @@ export class ProgramService {
       values.push(updates.name);
     }
     if (updates.config !== undefined) {
+      // Merge with existing config rather than replacing
+      const existingConfig = typeof existing.rows[0].config === 'string'
+        ? JSON.parse(existing.rows[0].config)
+        : (existing.rows[0].config ?? {});
+      const mergedConfig = { ...existingConfig, ...updates.config };
       setClauses.push(`config = $${idx++}`);
-      values.push(JSON.stringify(updates.config));
+      values.push(JSON.stringify(mergedConfig));
     }
     setClauses.push('updated_at = now()');
     values.push(programId);
@@ -292,6 +297,31 @@ export class ProgramService {
         // If enabling, ensure table exists
         if (event.enabled && schemaName) {
           await this.ensureEventTable(schemaName, parsedIdl, event.name, event.type);
+        }
+      }
+    }
+
+    // Auto-provision CPI/balance tables when enabling the feature
+    if (updates.config) {
+      const userResult = await this.pool.query(
+        'SELECT schema_name FROM users WHERE id = $1',
+        [userId]
+      );
+      const schemaName = userResult.rows[0]?.schema_name as string | undefined;
+      if (schemaName) {
+        const ddl: string[] = [];
+        if (updates.config.cpi_transfers_enabled === true) {
+          ddl.push(generateCpiTransfersTable());
+        }
+        if (updates.config.balance_deltas_enabled === true) {
+          ddl.push(generateBalanceChangesTable());
+        }
+        if (ddl.length > 0) {
+          await inUserSchema(this.pool, schemaName, async (client) => {
+            for (const sql of ddl) {
+              await client.query(sql);
+            }
+          });
         }
       }
     }
@@ -419,6 +449,15 @@ export class ProgramService {
       if (enabledInstructions.has(instruction.name)) {
         ddl.push(generateInstructionTable(parsedIdl.programName, instruction));
       }
+    }
+
+    // Conditionally create CPI transfers and balance changes tables
+    const config = program.config ?? {};
+    if (config.cpi_transfers_enabled) {
+      ddl.push(generateCpiTransfersTable());
+    }
+    if (config.balance_deltas_enabled) {
+      ddl.push(generateBalanceChangesTable());
     }
 
     // Apply DDL within the user's schema
