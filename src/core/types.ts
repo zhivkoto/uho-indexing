@@ -398,6 +398,46 @@ export interface SubscriberInfo {
   enabledEvents: string[];
   enabledInstructions: string[];
   rawIdl: Record<string, unknown>;
+  cpiTransfers: boolean;
+  balanceDeltas: boolean;
+}
+
+// =============================================================================
+// CPI Transfer & Balance Delta Types
+// =============================================================================
+
+/** A decoded inner CPI SPL Token transfer from meta.innerInstructions */
+export interface DecodedCpiTransfer {
+  txSignature: string;
+  slot: number;
+  blockTime: number | null;
+  programId: string;         // user's indexed program
+  parentIxIndex: number;
+  innerIxIndex: number;
+  transferType: 'transfer' | 'transferChecked';
+  fromAccount: string;
+  toAccount: string;
+  authority: string;
+  amount: string;            // string for u64 safety
+  mint: string | null;
+  decimals: number | null;
+  tokenProgramId: string;
+}
+
+/** A decoded token balance delta from meta.preTokenBalances / postTokenBalances */
+export interface DecodedBalanceDelta {
+  txSignature: string;
+  slot: number;
+  blockTime: number | null;
+  programId: string;
+  accountIndex: number;
+  account: string;
+  mint: string;
+  owner: string | null;
+  preAmount: string;
+  postAmount: string;
+  delta: string;             // signed, string for precision
+  decimals: number;
 }
 
 /** Result of writing events to multiple subscriber schemas */
