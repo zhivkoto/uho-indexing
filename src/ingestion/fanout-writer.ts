@@ -7,7 +7,7 @@
  */
 
 import type pg from 'pg';
-import type { ParsedIDL, DecodedEvent, DecodedInstruction, SubscriberInfo, WriteResult } from '../core/types.js';
+import type { ParsedIDL, DecodedEvent, DecodedInstruction, DecodedCpiTransfer, DecodedBalanceDelta, SubscriberInfo, WriteResult } from '../core/types.js';
 import { EventWriter } from './writer.js';
 import { inUserSchema } from '../core/db.js';
 
@@ -33,7 +33,9 @@ export class FanoutWriter {
     events: DecodedEvent[],
     instructions: DecodedInstruction[],
     subscribers: SubscriberInfo[],
-    txLogs?: Array<{ txSignature: string; slot: number; logMessages: string[] }>
+    txLogs?: Array<{ txSignature: string; slot: number; logMessages: string[] }>,
+    cpiTransfers?: DecodedCpiTransfer[],
+    balanceDeltas?: DecodedBalanceDelta[]
   ): Promise<WriteResult> {
     const result: WriteResult = { totalWritten: 0, perSubscriber: {} };
 
@@ -47,7 +49,10 @@ export class FanoutWriter {
           sub.enabledInstructions.includes(ix.instructionName)
         );
 
-        if (enabledEvents.length === 0 && enabledInstructions.length === 0) continue;
+        // Check if subscriber has any data to write (events, instructions, or CPI/balance data)
+        const hasCpiData = sub.cpiTransfers && (cpiTransfers?.length ?? 0) > 0;
+        const hasBalanceData = sub.balanceDeltas && (balanceDeltas?.length ?? 0) > 0;
+        if (enabledEvents.length === 0 && enabledInstructions.length === 0 && !hasCpiData && !hasBalanceData) continue;
 
         // Write to subscriber's schema using a schema-scoped client
         const written = await inUserSchema(this.pool, sub.schemaName, async (client) => {
@@ -85,13 +90,37 @@ export class FanoutWriter {
             }
           }
 
+          // Write CPI transfers if subscriber has the feature enabled
+          if (sub.cpiTransfers && cpiTransfers && cpiTransfers.length > 0) {
+            try {
+              count += await writer.writeCpiTransfers(cpiTransfers);
+            } catch (err) {
+              console.error(`[FanoutWriter] Error writing CPI transfers to ${sub.schemaName}: ${(err as Error).message}`);
+            }
+          }
+
+          // Write balance deltas if subscriber has the feature enabled
+          if (sub.balanceDeltas && balanceDeltas && balanceDeltas.length > 0) {
+            try {
+              count += await writer.writeBalanceDeltas(balanceDeltas);
+            } catch (err) {
+              console.error(`[FanoutWriter] Error writing balance deltas to ${sub.schemaName}: ${(err as Error).message}`);
+            }
+          }
+
           // Update _uho_state in subscriber's schema
-          const allItems = [...enabledEvents, ...enabledInstructions];
-          if (allItems.length > 0) {
-            const latestSlot = Math.max(
-              ...enabledEvents.map((e) => e.slot),
-              ...enabledInstructions.map((ix) => ix.slot)
-            );
+          const allSlots: number[] = [
+            ...enabledEvents.map((e) => e.slot),
+            ...enabledInstructions.map((ix) => ix.slot),
+          ];
+          if (sub.cpiTransfers && cpiTransfers) {
+            allSlots.push(...cpiTransfers.map((t) => t.slot));
+          }
+          if (sub.balanceDeltas && balanceDeltas) {
+            allSlots.push(...balanceDeltas.map((d) => d.slot));
+          }
+          if (allSlots.length > 0) {
+            const latestSlot = Math.max(...allSlots);
             const currentState = await writer.getState(programId);
             await writer.updateState(programId, {
               lastSlot: latestSlot,
