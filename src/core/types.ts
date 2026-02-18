@@ -398,6 +398,7 @@ export interface SubscriberInfo {
   enabledEvents: string[];
   enabledInstructions: string[];
   rawIdl: Record<string, unknown>;
+  rawTransactions: boolean;
 }
 
 /** Result of writing events to multiple subscriber schemas */

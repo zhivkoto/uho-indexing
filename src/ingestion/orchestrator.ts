@@ -261,13 +261,26 @@ export class IndexerOrchestrator {
               }
             }
 
+            // Collect raw transaction data if any subscriber wants it
+            const anyWantsRawTx = program.subscribers.some((s) => s.rawTransactions);
+            const rawTransactions = anyWantsRawTx
+              ? txs.map((tx) => ({
+                  txSignature: tx.transaction.signatures[0],
+                  slot: tx.slot,
+                  blockTime: tx.blockTime ?? null,
+                  programId: program.programId,
+                  rawTx: tx,
+                }))
+              : undefined;
+
             if (events.length > 0 || instructions.length > 0) {
               await program.fanoutWriter.writeToSubscribers(
                 program.programId,
                 events,
                 instructions,
                 program.subscribers,
-                txLogs
+                txLogs,
+                rawTransactions
               );
             }
           }
@@ -352,6 +365,9 @@ export class IndexerOrchestrator {
           .filter((e) => e.event_type === 'instruction')
           .map((e) => e.event_name);
 
+        // Parse raw_transactions_enabled from the subscriber's config
+        const rawTransactions = !!(sub.config && (sub.config as Record<string, unknown>).raw_transactions_enabled);
+
         subscribers.push({
           userId: sub.user_id,
           schemaName: sub.schema_name,
@@ -360,6 +376,7 @@ export class IndexerOrchestrator {
           enabledEvents,
           enabledInstructions,
           rawIdl,
+          rawTransactions,
         });
       } catch (err) {
         console.error(

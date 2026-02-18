@@ -8,7 +8,7 @@
 import type pg from 'pg';
 import type { UserProgram, UserProgramEvent, AnchorIDL } from '../core/types.js';
 import { parseIDL, toSnakeCase } from '../core/idl-parser.js';
-import { generateEventTable, generateInstructionTable, generateMetadataTable, applySchema } from '../core/schema-generator.js';
+import { generateEventTable, generateInstructionTable, generateMetadataTable, generateRawTransactionsTable, applySchema } from '../core/schema-generator.js';
 import { inUserSchema } from '../core/db.js';
 import { NotFoundError, ConflictError, ForbiddenError, ValidationError } from '../core/errors.js';
 import { FREE_TIER_LIMITS } from '../core/platform-config.js';
@@ -236,7 +236,7 @@ export class ProgramService {
     updates: {
       name?: string;
       events?: Array<{ name: string; type: string; enabled: boolean; fieldConfig?: Record<string, unknown> }>;
-      config?: Record<string, unknown>;
+      config?: Record<string, unknown> & { raw_transactions_enabled?: boolean };
     }
   ): Promise<UserProgram> {
     // Verify ownership
@@ -257,8 +257,27 @@ export class ProgramService {
       values.push(updates.name);
     }
     if (updates.config !== undefined) {
+      // Merge with existing config to preserve other settings
+      const existingConfig = (typeof existing.rows[0].config === 'string'
+        ? JSON.parse(existing.rows[0].config as string)
+        : existing.rows[0].config ?? {}) as Record<string, unknown>;
+      const mergedConfig = { ...existingConfig, ...updates.config };
       setClauses.push(`config = $${idx++}`);
-      values.push(JSON.stringify(updates.config));
+      values.push(JSON.stringify(mergedConfig));
+
+      // Auto-provision _raw_transactions table when enabling
+      if (updates.config.raw_transactions_enabled) {
+        const userResult = await this.pool.query(
+          'SELECT schema_name FROM users WHERE id = $1',
+          [userId]
+        );
+        const schemaName = userResult.rows[0]?.schema_name as string | undefined;
+        if (schemaName) {
+          await inUserSchema(this.pool, schemaName, async (client) => {
+            await client.query(generateRawTransactionsTable());
+          });
+        }
+      }
     }
     setClauses.push('updated_at = now()');
     values.push(programId);

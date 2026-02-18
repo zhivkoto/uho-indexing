@@ -81,6 +81,26 @@ CREATE TABLE IF NOT EXISTS _uho_state (
 }
 
 /**
+ * Generates DDL for the _raw_transactions table.
+ * Stores the full ParsedTransactionWithMeta JSON for every matched transaction.
+ * Opt-in per program via user_programs.config.raw_transactions_enabled.
+ */
+export function generateRawTransactionsTable(): string {
+  return `
+CREATE TABLE IF NOT EXISTS _raw_transactions (
+    tx_signature    TEXT PRIMARY KEY,
+    slot            BIGINT NOT NULL,
+    block_time      TIMESTAMPTZ,
+    program_id      TEXT NOT NULL,
+    raw_tx          JSONB NOT NULL,
+    indexed_at      TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_raw_tx_slot ON _raw_transactions (slot);
+CREATE INDEX IF NOT EXISTS idx_raw_tx_program ON _raw_transactions (program_id);
+CREATE INDEX IF NOT EXISTS idx_raw_tx_time ON _raw_transactions (block_time);`.trim();
+}
+
+/**
  * Generates DDL for the _tx_logs table.
  * Stores raw Solana transaction log messages per tx signature.
  */

@@ -318,6 +318,133 @@ export function registerDataRoutes(app: FastifyInstance, pool: pg.Pool): void {
   });
 
   // -----------------------------------------------------------------------
+  // GET /api/v1/data/:program/raw-transactions — List raw transactions
+  //
+  // Supports slot/time range filters and pagination.
+  // Returns metadata fields; raw_tx is excluded from list for performance.
+  // -----------------------------------------------------------------------
+  app.get('/api/v1/data/:program/raw-transactions', { preHandler: preHandlers }, async (request, reply) => {
+    const auth = request.authPayload!;
+    const client = request.schemaClient!;
+    const { program } = request.params as { program: string };
+    const query = request.query as Record<string, string>;
+
+    const limit = Math.min(Math.max(parseInt(query.limit || '50', 10), 1), 1000);
+    const offset = Math.max(parseInt(query.offset || '0', 10), 0);
+    const order = query.order === 'asc' ? 'ASC' : 'DESC';
+
+    try {
+      // Verify the user owns this program
+      const progResult = await pool.query(
+        `SELECT program_id FROM user_programs WHERE user_id = $1 AND name = $2 AND status != 'archived'`,
+        [auth.userId, program]
+      );
+      if (progResult.rows.length === 0) {
+        throw new NotFoundError(`Program '${program}' not found`);
+      }
+      const solProgramId = progResult.rows[0].program_id as string;
+
+      // Build WHERE clauses
+      const whereClauses: string[] = ['program_id = $1'];
+      const params: unknown[] = [solProgramId];
+      let paramIdx = 2;
+
+      if (query.from) {
+        whereClauses.push(`block_time >= $${paramIdx++}`);
+        params.push(query.from);
+      }
+      if (query.to) {
+        whereClauses.push(`block_time <= $${paramIdx++}`);
+        params.push(query.to);
+      }
+      if (query.slotFrom) {
+        whereClauses.push(`slot >= $${paramIdx++}`);
+        params.push(parseInt(query.slotFrom, 10));
+      }
+      if (query.slotTo) {
+        whereClauses.push(`slot <= $${paramIdx++}`);
+        params.push(parseInt(query.slotTo, 10));
+      }
+
+      const whereStr = 'WHERE ' + whereClauses.join(' AND ');
+
+      // List query — exclude raw_tx for performance (it can be 5-50KB per row)
+      const dataSql = `
+        SELECT tx_signature, slot, block_time, program_id, indexed_at
+        FROM _raw_transactions
+        ${whereStr}
+        ORDER BY slot ${order}
+        LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
+      `;
+      params.push(limit, offset);
+
+      const dataResult = await client.query(dataSql, params);
+
+      // Count total
+      const countParams = params.slice(0, -2); // Remove limit/offset
+      const countSql = `SELECT COUNT(*)::int as total FROM _raw_transactions ${whereStr}`;
+      const countResult = await client.query(countSql, countParams);
+      const total = countResult.rows[0]?.total ?? 0;
+
+      return {
+        data: dataResult.rows.map(serializeRow),
+        pagination: { limit, offset, total },
+      };
+    } catch (err) {
+      if (err instanceof AppError) {
+        return reply.status(err.statusCode).send(err.toResponse());
+      }
+      // Table might not exist
+      if ((err as { code?: string })?.code === '42P01') {
+        return { data: [], pagination: { limit, offset, total: 0 } };
+      }
+      throw err;
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // GET /api/v1/data/:program/raw-transactions/:txSignature — Single raw tx
+  //
+  // Returns the full raw transaction JSON for a specific signature.
+  // -----------------------------------------------------------------------
+  app.get('/api/v1/data/:program/raw-transactions/:txSignature', { preHandler: preHandlers }, async (request, reply) => {
+    const auth = request.authPayload!;
+    const client = request.schemaClient!;
+    const { program, txSignature } = request.params as { program: string; txSignature: string };
+
+    try {
+      // Verify the user owns this program
+      const progResult = await pool.query(
+        `SELECT program_id FROM user_programs WHERE user_id = $1 AND name = $2 AND status != 'archived'`,
+        [auth.userId, program]
+      );
+      if (progResult.rows.length === 0) {
+        throw new NotFoundError(`Program '${program}' not found`);
+      }
+
+      const result = await client.query(
+        'SELECT * FROM _raw_transactions WHERE tx_signature = $1',
+        [txSignature]
+      );
+
+      if (result.rows.length === 0) {
+        return { data: null };
+      }
+
+      return { data: serializeRow(result.rows[0]) };
+    } catch (err) {
+      if (err instanceof AppError) {
+        return reply.status(err.statusCode).send(err.toResponse());
+      }
+      // Table might not exist
+      if ((err as { code?: string })?.code === '42P01') {
+        return { data: null };
+      }
+      throw err;
+    }
+  });
+
+  // -----------------------------------------------------------------------
   // GET /api/v1/data/:program/views/:viewName — Query a custom view
   // -----------------------------------------------------------------------
   app.get('/api/v1/data/:program/views/:viewName', { preHandler: preHandlers }, async (request, reply) => {
