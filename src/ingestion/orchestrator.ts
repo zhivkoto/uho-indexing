@@ -9,11 +9,13 @@
 
 import { Connection, PublicKey } from '@solana/web3.js';
 import type pg from 'pg';
-import type { ParsedIDL, AnchorIDL, SubscriberInfo, DecodedEvent, DecodedInstruction } from '../core/types.js';
+import type { ParsedIDL, AnchorIDL, SubscriberInfo, DecodedEvent, DecodedInstruction, DecodedCpiTransfer, DecodedBalanceDelta } from '../core/types.js';
 import { parseIDL } from '../core/idl-parser.js';
 import { TransactionPoller } from './poller.js';
 import { EventDecoder } from './decoder.js';
 import { InstructionDecoder } from './instruction-decoder.js';
+import { CpiTransferDecoder } from './cpi-decoder.js';
+import { BalanceDeltaDecoder } from './balance-delta-decoder.js';
 import { FanoutWriter } from './fanout-writer.js';
 
 // =============================================================================
@@ -66,6 +68,10 @@ export class IndexerOrchestrator {
 
   /** PG LISTEN client for program change notifications */
   private listenerClient: pg.PoolClient | null = null;
+
+  /** Stateless decoders for CPI transfers and balance deltas (shared across all programs) */
+  private cpiDecoder = new CpiTransferDecoder();
+  private balanceDeltaDecoder = new BalanceDeltaDecoder();
 
   constructor(pool: pg.Pool, rpcUrl: string) {
     this.pool = pool;
@@ -242,12 +248,30 @@ export class IndexerOrchestrator {
           if (txs.length > 0) {
             const events: DecodedEvent[] = [];
             const instructions: DecodedInstruction[] = [];
+            const cpiTransfers: DecodedCpiTransfer[] = [];
+            const balanceDeltas: DecodedBalanceDelta[] = [];
             const txLogs: Array<{ txSignature: string; slot: number; logMessages: string[] }> = [];
+
+            // Check if any subscriber has CPI/balance features enabled (optimization)
+            const anyCpi = program.subscribers.some((s) => s.cpiTransfers);
+            const anyBalance = program.subscribers.some((s) => s.balanceDeltas);
+
             for (const tx of txs) {
               events.push(...program.decoder.decodeTransaction(tx));
               if (program.instructionDecoder) {
                 instructions.push(...program.instructionDecoder.decodeTransaction(tx));
               }
+
+              // Decode CPI transfers if at least one subscriber wants them
+              if (anyCpi) {
+                cpiTransfers.push(...this.cpiDecoder.decodeTransaction(tx, program.programId));
+              }
+
+              // Decode balance deltas if at least one subscriber wants them
+              if (anyBalance) {
+                balanceDeltas.push(...this.balanceDeltaDecoder.decodeTransaction(tx, program.programId));
+              }
+
               // Collect transaction logs
               if (tx.meta?.logMessages?.length) {
                 const sig = tx.transaction.signatures[0];
@@ -261,13 +285,15 @@ export class IndexerOrchestrator {
               }
             }
 
-            if (events.length > 0 || instructions.length > 0) {
+            if (events.length > 0 || instructions.length > 0 || cpiTransfers.length > 0 || balanceDeltas.length > 0) {
               await program.fanoutWriter.writeToSubscribers(
                 program.programId,
                 events,
                 instructions,
                 program.subscribers,
-                txLogs
+                txLogs,
+                cpiTransfers,
+                balanceDeltas
               );
             }
           }
@@ -352,6 +378,11 @@ export class IndexerOrchestrator {
           .filter((e) => e.event_type === 'instruction')
           .map((e) => e.event_name);
 
+        // Parse CPI/balance feature flags from config JSONB
+        const config = sub.config ?? {};
+        const cpiTransfers = config.cpi_transfers_enabled === true;
+        const balanceDeltas = config.balance_deltas_enabled === true;
+
         subscribers.push({
           userId: sub.user_id,
           schemaName: sub.schema_name,
@@ -360,6 +391,8 @@ export class IndexerOrchestrator {
           enabledEvents,
           enabledInstructions,
           rawIdl,
+          cpiTransfers,
+          balanceDeltas,
         });
       } catch (err) {
         console.error(

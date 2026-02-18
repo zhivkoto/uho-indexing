@@ -241,7 +241,12 @@ export async function updateProgram(
   updates: {
     name?: string;
     events?: Array<{ name: string; type: string; enabled: boolean; fieldConfig?: object }>;
-    config?: { pollIntervalMs?: number; batchSize?: number };
+    config?: {
+      pollIntervalMs?: number;
+      batchSize?: number;
+      cpi_transfers_enabled?: boolean;
+      balance_deltas_enabled?: boolean;
+    };
   },
 ): Promise<ProgramInfo> {
   return fetchApi(`/api/v1/programs/${id}`, {

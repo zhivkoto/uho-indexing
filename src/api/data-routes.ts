@@ -318,6 +318,221 @@ export function registerDataRoutes(app: FastifyInstance, pool: pg.Pool): void {
   });
 
   // -----------------------------------------------------------------------
+  // GET /api/v1/data/:program/cpi-transfers — List CPI transfers (paginated, filterable)
+  //
+  // Filters: from_account, to_account, mint, transfer_type, authority,
+  //          amount_gte, amount_lte, slot/time ranges, cursor pagination
+  // -----------------------------------------------------------------------
+  app.get('/api/v1/data/:program/cpi-transfers', { preHandler: preHandlers }, async (request, reply) => {
+    const auth = request.authPayload!;
+    const client = request.schemaClient!;
+    const { program } = request.params as { program: string };
+    const query = request.query as Record<string, string>;
+
+    const limit = Math.min(Math.max(parseInt(query.limit || '50', 10), 1), 1000);
+    const afterId = query.after_id || query.afterId;
+    const useCursor = afterId !== undefined;
+    const order = query.order === 'asc' ? 'ASC' : 'DESC';
+
+    try {
+      // Verify program exists for this user
+      const progResult = await pool.query(
+        `SELECT program_id FROM user_programs WHERE user_id = $1 AND name = $2 AND status != 'archived'`,
+        [auth.userId, program]
+      );
+      if (progResult.rows.length === 0) {
+        throw new NotFoundError(`Program '${program}' not found`);
+      }
+      const programId = progResult.rows[0].program_id as string;
+
+      const whereClauses: string[] = ['program_id = $1'];
+      const params: unknown[] = [programId];
+      let paramIdx = 2;
+
+      // Field filters
+      if (query.from_account) { whereClauses.push(`from_account = $${paramIdx++}`); params.push(query.from_account); }
+      if (query.to_account) { whereClauses.push(`to_account = $${paramIdx++}`); params.push(query.to_account); }
+      if (query.mint) { whereClauses.push(`mint = $${paramIdx++}`); params.push(query.mint); }
+      if (query.authority) { whereClauses.push(`authority = $${paramIdx++}`); params.push(query.authority); }
+      if (query.transfer_type) { whereClauses.push(`transfer_type = $${paramIdx++}`); params.push(query.transfer_type); }
+      if (query.token_program_id) { whereClauses.push(`token_program_id = $${paramIdx++}`); params.push(query.token_program_id); }
+
+      // Range filters
+      if (query.amount_gte) { whereClauses.push(`amount >= $${paramIdx++}`); params.push(query.amount_gte); }
+      if (query.amount_lte) { whereClauses.push(`amount <= $${paramIdx++}`); params.push(query.amount_lte); }
+      if (query.from || query.time_from) { whereClauses.push(`block_time >= $${paramIdx++}`); params.push(query.from || query.time_from); }
+      if (query.to || query.time_to) { whereClauses.push(`block_time <= $${paramIdx++}`); params.push(query.to || query.time_to); }
+      if (query.slotFrom || query.slot_from) { whereClauses.push(`slot >= $${paramIdx++}`); params.push(parseInt(query.slotFrom || query.slot_from, 10)); }
+      if (query.slotTo || query.slot_to) { whereClauses.push(`slot <= $${paramIdx++}`); params.push(parseInt(query.slotTo || query.slot_to, 10)); }
+
+      // Cursor pagination
+      const cursorDirection = order === 'ASC' ? '>' : '<';
+      if (useCursor && afterId) {
+        const parsedAfterId = parseInt(afterId, 10);
+        if (isNaN(parsedAfterId)) throw new ValidationError('after_id must be a valid integer');
+        params.push(parsedAfterId);
+        whereClauses.push(`id ${cursorDirection} $${paramIdx++}`);
+      }
+
+      const whereStr = 'WHERE ' + whereClauses.join(' AND ');
+      const dataSql = `SELECT * FROM _cpi_transfers ${whereStr} ORDER BY id ${order} LIMIT $${paramIdx}`;
+      const dataResult = await client.query(dataSql, [...params, limit]);
+
+      const rows = dataResult.rows.map(serializeRow);
+      const lastRow = rows[rows.length - 1];
+      const nextCursor = rows.length === limit && lastRow ? (lastRow.id as number) : undefined;
+
+      return {
+        data: rows,
+        pagination: {
+          limit,
+          ...(nextCursor !== undefined ? { next_cursor: nextCursor } : {}),
+          has_more: rows.length === limit,
+        },
+      };
+    } catch (err) {
+      if (err instanceof AppError) return reply.status(err.statusCode).send(err.toResponse());
+      if ((err as { code?: string })?.code === '42P01') {
+        return { data: [], pagination: { limit, has_more: false } };
+      }
+      throw err;
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // GET /api/v1/data/:program/cpi-transfers/:txSignature — CPI transfers by tx
+  // -----------------------------------------------------------------------
+  app.get('/api/v1/data/:program/cpi-transfers/:txSignature', { preHandler: preHandlers }, async (request, reply) => {
+    const auth = request.authPayload!;
+    const client = request.schemaClient!;
+    const { program, txSignature } = request.params as { program: string; txSignature: string };
+
+    try {
+      const progResult = await pool.query(
+        `SELECT program_id FROM user_programs WHERE user_id = $1 AND name = $2 AND status != 'archived'`,
+        [auth.userId, program]
+      );
+      if (progResult.rows.length === 0) throw new NotFoundError(`Program '${program}' not found`);
+
+      const result = await client.query(
+        `SELECT * FROM _cpi_transfers WHERE tx_signature = $1 AND program_id = $2 ORDER BY parent_ix_index, inner_ix_index`,
+        [txSignature, progResult.rows[0].program_id]
+      );
+      return { data: result.rows.map(serializeRow) };
+    } catch (err) {
+      if (err instanceof AppError) return reply.status(err.statusCode).send(err.toResponse());
+      if ((err as { code?: string })?.code === '42P01') return { data: [] };
+      throw err;
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // GET /api/v1/data/:program/balance-changes — Token balance deltas (paginated, filterable)
+  //
+  // Filters: account, mint, owner, delta_gt, delta_lt, slot/time ranges, cursor pagination
+  // -----------------------------------------------------------------------
+  app.get('/api/v1/data/:program/balance-changes', { preHandler: preHandlers }, async (request, reply) => {
+    const auth = request.authPayload!;
+    const client = request.schemaClient!;
+    const { program } = request.params as { program: string };
+    const query = request.query as Record<string, string>;
+
+    const limit = Math.min(Math.max(parseInt(query.limit || '50', 10), 1), 1000);
+    const afterId = query.after_id || query.afterId;
+    const useCursor = afterId !== undefined;
+    const order = query.order === 'asc' ? 'ASC' : 'DESC';
+
+    try {
+      const progResult = await pool.query(
+        `SELECT program_id FROM user_programs WHERE user_id = $1 AND name = $2 AND status != 'archived'`,
+        [auth.userId, program]
+      );
+      if (progResult.rows.length === 0) throw new NotFoundError(`Program '${program}' not found`);
+      const programId = progResult.rows[0].program_id as string;
+
+      const whereClauses: string[] = ['program_id = $1'];
+      const params: unknown[] = [programId];
+      let paramIdx = 2;
+
+      // Field filters
+      if (query.account) { whereClauses.push(`account = $${paramIdx++}`); params.push(query.account); }
+      if (query.mint) { whereClauses.push(`mint = $${paramIdx++}`); params.push(query.mint); }
+      if (query.owner) { whereClauses.push(`owner = $${paramIdx++}`); params.push(query.owner); }
+
+      // Delta direction filters (delta_gt=0 for inflows, delta_lt=0 for outflows)
+      if (query.delta_gt) { whereClauses.push(`delta > $${paramIdx++}`); params.push(query.delta_gt); }
+      if (query.delta_lt) { whereClauses.push(`delta < $${paramIdx++}`); params.push(query.delta_lt); }
+      if (query.delta_gte) { whereClauses.push(`delta >= $${paramIdx++}`); params.push(query.delta_gte); }
+      if (query.delta_lte) { whereClauses.push(`delta <= $${paramIdx++}`); params.push(query.delta_lte); }
+
+      // Time/slot range filters
+      if (query.from || query.time_from) { whereClauses.push(`block_time >= $${paramIdx++}`); params.push(query.from || query.time_from); }
+      if (query.to || query.time_to) { whereClauses.push(`block_time <= $${paramIdx++}`); params.push(query.to || query.time_to); }
+      if (query.slotFrom || query.slot_from) { whereClauses.push(`slot >= $${paramIdx++}`); params.push(parseInt(query.slotFrom || query.slot_from, 10)); }
+      if (query.slotTo || query.slot_to) { whereClauses.push(`slot <= $${paramIdx++}`); params.push(parseInt(query.slotTo || query.slot_to, 10)); }
+
+      // Cursor pagination
+      const cursorDirection = order === 'ASC' ? '>' : '<';
+      if (useCursor && afterId) {
+        const parsedAfterId = parseInt(afterId, 10);
+        if (isNaN(parsedAfterId)) throw new ValidationError('after_id must be a valid integer');
+        params.push(parsedAfterId);
+        whereClauses.push(`id ${cursorDirection} $${paramIdx++}`);
+      }
+
+      const whereStr = 'WHERE ' + whereClauses.join(' AND ');
+      const dataSql = `SELECT * FROM _token_balance_changes ${whereStr} ORDER BY id ${order} LIMIT $${paramIdx}`;
+      const dataResult = await client.query(dataSql, [...params, limit]);
+
+      const rows = dataResult.rows.map(serializeRow);
+      const lastRow = rows[rows.length - 1];
+      const nextCursor = rows.length === limit && lastRow ? (lastRow.id as number) : undefined;
+
+      return {
+        data: rows,
+        pagination: {
+          limit,
+          ...(nextCursor !== undefined ? { next_cursor: nextCursor } : {}),
+          has_more: rows.length === limit,
+        },
+      };
+    } catch (err) {
+      if (err instanceof AppError) return reply.status(err.statusCode).send(err.toResponse());
+      if ((err as { code?: string })?.code === '42P01') {
+        return { data: [], pagination: { limit, has_more: false } };
+      }
+      throw err;
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // GET /api/v1/data/:program/balance-changes/:txSignature — Balance changes by tx
+  // -----------------------------------------------------------------------
+  app.get('/api/v1/data/:program/balance-changes/:txSignature', { preHandler: preHandlers }, async (request, reply) => {
+    const auth = request.authPayload!;
+    const client = request.schemaClient!;
+    const { program, txSignature } = request.params as { program: string; txSignature: string };
+
+    try {
+      const progResult = await pool.query(
+        `SELECT program_id FROM user_programs WHERE user_id = $1 AND name = $2 AND status != 'archived'`,
+        [auth.userId, program]
+      );
+      if (progResult.rows.length === 0) throw new NotFoundError(`Program '${program}' not found`);
+
+      const result = await client.query(
+        `SELECT * FROM _token_balance_changes WHERE tx_signature = $1 AND program_id = $2 ORDER BY account_index`,
+        [txSignature, progResult.rows[0].program_id]
+      );
+      return { data: result.rows.map(serializeRow) };
+    } catch (err) {
+      if (err instanceof AppError) return reply.status(err.statusCode).send(err.toResponse());
+      if ((err as { code?: string })?.code === '42P01') return { data: [] };
+      throw err;
+    }
+  });
+
+  // -----------------------------------------------------------------------
   // GET /api/v1/data/:program/views/:viewName — Query a custom view
   // -----------------------------------------------------------------------
   app.get('/api/v1/data/:program/views/:viewName', { preHandler: preHandlers }, async (request, reply) => {

@@ -149,6 +149,82 @@ export function generateEventTable(programName: string, event: ParsedEvent): str
 }
 
 // =============================================================================
+// CPI Transfers Table Generation
+// =============================================================================
+
+/**
+ * Generates DDL for the _cpi_transfers table.
+ * One row per inner SPL Token transfer/transferChecked within a matched transaction.
+ */
+export function generateCpiTransfersTable(): string {
+  return `
+CREATE TABLE IF NOT EXISTS _cpi_transfers (
+    id                 BIGSERIAL PRIMARY KEY,
+    tx_signature       TEXT NOT NULL,
+    slot               BIGINT NOT NULL,
+    block_time         TIMESTAMPTZ,
+    program_id         TEXT NOT NULL,
+    parent_ix_index    INTEGER NOT NULL,
+    inner_ix_index     INTEGER NOT NULL,
+    transfer_type      TEXT NOT NULL,
+    from_account       TEXT NOT NULL,
+    to_account         TEXT NOT NULL,
+    authority          TEXT NOT NULL,
+    amount             NUMERIC(20,0) NOT NULL,
+    mint               TEXT,
+    decimals           SMALLINT,
+    token_program_id   TEXT NOT NULL,
+    indexed_at         TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_cpi_transfers_tx       ON _cpi_transfers (tx_signature);
+CREATE INDEX IF NOT EXISTS idx_cpi_transfers_slot     ON _cpi_transfers (slot);
+CREATE INDEX IF NOT EXISTS idx_cpi_transfers_from     ON _cpi_transfers (from_account);
+CREATE INDEX IF NOT EXISTS idx_cpi_transfers_to       ON _cpi_transfers (to_account);
+CREATE INDEX IF NOT EXISTS idx_cpi_transfers_mint     ON _cpi_transfers (mint);
+CREATE INDEX IF NOT EXISTS idx_cpi_transfers_program  ON _cpi_transfers (program_id);
+CREATE INDEX IF NOT EXISTS idx_cpi_transfers_time     ON _cpi_transfers (block_time);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_cpi_transfers
+    ON _cpi_transfers (tx_signature, parent_ix_index, inner_ix_index);`.trim();
+}
+
+// =============================================================================
+// Token Balance Changes Table Generation
+// =============================================================================
+
+/**
+ * Generates DDL for the _token_balance_changes table.
+ * One row per account-mint pair that changed balances in a matched transaction.
+ */
+export function generateBalanceChangesTable(): string {
+  return `
+CREATE TABLE IF NOT EXISTS _token_balance_changes (
+    id                 BIGSERIAL PRIMARY KEY,
+    tx_signature       TEXT NOT NULL,
+    slot               BIGINT NOT NULL,
+    block_time         TIMESTAMPTZ,
+    program_id         TEXT NOT NULL,
+    account_index      INTEGER NOT NULL,
+    account            TEXT NOT NULL,
+    mint               TEXT NOT NULL,
+    owner              TEXT,
+    pre_amount         NUMERIC(20,0) NOT NULL,
+    post_amount        NUMERIC(20,0) NOT NULL,
+    delta              NUMERIC(20,0) NOT NULL,
+    decimals           SMALLINT NOT NULL,
+    indexed_at         TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_tbc_tx       ON _token_balance_changes (tx_signature);
+CREATE INDEX IF NOT EXISTS idx_tbc_slot     ON _token_balance_changes (slot);
+CREATE INDEX IF NOT EXISTS idx_tbc_account  ON _token_balance_changes (account);
+CREATE INDEX IF NOT EXISTS idx_tbc_mint     ON _token_balance_changes (mint);
+CREATE INDEX IF NOT EXISTS idx_tbc_owner    ON _token_balance_changes (owner);
+CREATE INDEX IF NOT EXISTS idx_tbc_program  ON _token_balance_changes (program_id);
+CREATE INDEX IF NOT EXISTS idx_tbc_time     ON _token_balance_changes (block_time);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_tbc
+    ON _token_balance_changes (tx_signature, account_index);`.trim();
+}
+
+// =============================================================================
 // Instruction Table Generation
 // =============================================================================
 
@@ -283,7 +359,8 @@ export function generateDDL(parsed: ParsedIDL, config: ProgramConfig): string[] 
 export function generateUserSchemaDDL(
   schemaName: string,
   parsed: ParsedIDL,
-  enabledEvents: UserProgramEvent[]
+  enabledEvents: UserProgramEvent[],
+  config?: Record<string, unknown>
 ): string[] {
   const ddl: string[] = [];
 
@@ -318,6 +395,14 @@ export function generateUserSchemaDDL(
     if (enabledInstructionNames.has(instruction.name)) {
       ddl.push(generateInstructionTable(parsed.programName, instruction));
     }
+  }
+
+  // Conditionally generate CPI transfers and balance changes tables
+  if (config?.cpi_transfers_enabled) {
+    ddl.push(generateCpiTransfersTable());
+  }
+  if (config?.balance_deltas_enabled) {
+    ddl.push(generateBalanceChangesTable());
   }
 
   // Reset search_path

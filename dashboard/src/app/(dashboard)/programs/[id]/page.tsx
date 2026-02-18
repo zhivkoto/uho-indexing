@@ -81,6 +81,16 @@ export default function ProgramDetailPage() {
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to update event'),
   });
 
+  const toggleConfigMut = useMutation({
+    mutationFn: (config: Record<string, boolean>) =>
+      updateProgram(programId, { config }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['program', programId] });
+      toast.success('Configuration updated');
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to update config'),
+  });
+
   const handleCopy = async () => {
     if (program) {
       await copyToClipboard(program.programId);
@@ -345,6 +355,44 @@ export default function ProgramDetailPage() {
                 </div>
               ))}
             </div>
+            {/* CPI Transfer & Balance Delta Tracking */}
+            <h3 className="text-[15px] font-semibold text-[#EDEDEF] mt-6 mb-2">Data Enrichment</h3>
+            <p className="text-xs text-[#63637A] mb-4">Track inner token transfers and balance changes for this program&apos;s transactions</p>
+            <div className="space-y-2 mb-6">
+              <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-[#16161A] border border-[#1E1E26]">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs px-2 py-0.5 rounded bg-[#F59E0B]/10 text-[#F59E0B]">CPI</span>
+                  <div>
+                    <span className="font-mono text-sm text-[#EDEDEF]">Track CPI Transfers</span>
+                    <p className="text-xs text-[#63637A] mt-0.5">Decode inner SPL Token transfers from program transactions</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => toggleConfigMut.mutate({ cpi_transfers_enabled: !(program.config as any)?.cpi_transfers_enabled })}
+                  disabled={toggleConfigMut.isPending}
+                  className={`relative w-10 h-5 rounded-full transition-colors ${(program.config as any)?.cpi_transfers_enabled ? 'bg-[#22D3EE]' : 'bg-[#2A2A35]'}`}
+                >
+                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${(program.config as any)?.cpi_transfers_enabled ? 'left-5' : 'left-0.5'}`} />
+                </button>
+              </div>
+              <div className="flex items-center justify-between py-2 px-3 rounded-lg bg-[#16161A] border border-[#1E1E26]">
+                <div className="flex items-center gap-3">
+                  <span className="text-xs px-2 py-0.5 rounded bg-[#10B981]/10 text-[#10B981]">Δ</span>
+                  <div>
+                    <span className="font-mono text-sm text-[#EDEDEF]">Track Token Balance Changes</span>
+                    <p className="text-xs text-[#63637A] mt-0.5">Compute per-account token balance deltas for each transaction</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => toggleConfigMut.mutate({ balance_deltas_enabled: !(program.config as any)?.balance_deltas_enabled })}
+                  disabled={toggleConfigMut.isPending}
+                  className={`relative w-10 h-5 rounded-full transition-colors ${(program.config as any)?.balance_deltas_enabled ? 'bg-[#22D3EE]' : 'bg-[#2A2A35]'}`}
+                >
+                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${(program.config as any)?.balance_deltas_enabled ? 'left-5' : 'left-0.5'}`} />
+                </button>
+              </div>
+            </div>
+
             {Object.keys(program.config || {}).length > 0 && (
               <>
                 <h3 className="text-[15px] font-semibold text-[#EDEDEF] mt-6 mb-4">Advanced Config</h3>

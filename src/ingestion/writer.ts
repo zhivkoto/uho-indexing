@@ -6,7 +6,7 @@
  */
 
 import type pg from 'pg';
-import type { ParsedIDL, DecodedEvent, DecodedInstruction, IndexerState, ParsedEvent, ParsedInstruction } from '../core/types.js';
+import type { ParsedIDL, DecodedEvent, DecodedInstruction, DecodedCpiTransfer, DecodedBalanceDelta, IndexerState, ParsedEvent, ParsedInstruction } from '../core/types.js';
 import { eventTableName, instructionTableName } from '../core/schema-generator.js';
 import { toSnakeCase } from '../core/idl-parser.js';
 
@@ -99,6 +99,123 @@ export class EventWriter {
     } catch (err) {
       await client.query('ROLLBACK');
       throw new Error(`Failed to write instructions batch: ${(err as Error).message}`);
+    } finally {
+      client.release();
+    }
+
+    return written;
+  }
+
+  /**
+   * Writes a batch of decoded CPI transfers to the _cpi_transfers table.
+   * Uses batch INSERT with ON CONFLICT DO NOTHING for dedup.
+   * Returns the number of transfers successfully written.
+   */
+  async writeCpiTransfers(transfers: DecodedCpiTransfer[]): Promise<number> {
+    if (transfers.length === 0) return 0;
+
+    const client = await this.pool.connect();
+    let written = 0;
+
+    try {
+      await client.query('BEGIN');
+
+      for (const t of transfers) {
+        const blockTimeValue = t.blockTime
+          ? new Date(t.blockTime * 1000).toISOString()
+          : null;
+
+        const sql = `
+          INSERT INTO _cpi_transfers (
+            tx_signature, slot, block_time, program_id,
+            parent_ix_index, inner_ix_index, transfer_type,
+            from_account, to_account, authority,
+            amount, mint, decimals, token_program_id
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          ON CONFLICT DO NOTHING
+        `;
+
+        const result = await client.query(sql, [
+          t.txSignature,
+          t.slot,
+          blockTimeValue,
+          t.programId,
+          t.parentIxIndex,
+          t.innerIxIndex,
+          t.transferType,
+          t.fromAccount,
+          t.toAccount,
+          t.authority,
+          t.amount,
+          t.mint,
+          t.decimals,
+          t.tokenProgramId,
+        ]);
+
+        if ((result.rowCount ?? 0) > 0) written++;
+      }
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw new Error(`Failed to write CPI transfers batch: ${(err as Error).message}`);
+    } finally {
+      client.release();
+    }
+
+    return written;
+  }
+
+  /**
+   * Writes a batch of decoded balance deltas to the _token_balance_changes table.
+   * Uses batch INSERT with ON CONFLICT DO NOTHING for dedup.
+   * Returns the number of deltas successfully written.
+   */
+  async writeBalanceDeltas(deltas: DecodedBalanceDelta[]): Promise<number> {
+    if (deltas.length === 0) return 0;
+
+    const client = await this.pool.connect();
+    let written = 0;
+
+    try {
+      await client.query('BEGIN');
+
+      for (const d of deltas) {
+        const blockTimeValue = d.blockTime
+          ? new Date(d.blockTime * 1000).toISOString()
+          : null;
+
+        const sql = `
+          INSERT INTO _token_balance_changes (
+            tx_signature, slot, block_time, program_id,
+            account_index, account, mint, owner,
+            pre_amount, post_amount, delta, decimals
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+          ON CONFLICT DO NOTHING
+        `;
+
+        const result = await client.query(sql, [
+          d.txSignature,
+          d.slot,
+          blockTimeValue,
+          d.programId,
+          d.accountIndex,
+          d.account,
+          d.mint,
+          d.owner,
+          d.preAmount,
+          d.postAmount,
+          d.delta,
+          d.decimals,
+        ]);
+
+        if ((result.rowCount ?? 0) > 0) written++;
+      }
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw new Error(`Failed to write balance deltas batch: ${(err as Error).message}`);
     } finally {
       client.release();
     }
