@@ -43,12 +43,16 @@ export function LatestEvents() {
           events.data.map((event, i) => {
             const tx = String(event.txSignature || event.tx_signature || event.signature || '');
             const eventType = String(event.eventType || event.event_type || 'Event');
+            const programName = String(event.programName || event.program_name || '');
             const timestamp = event.timestamp || event.blockTime || event.block_time;
+            const detailHref = tx
+              ? `/events/${tx}${programName && eventType ? `?program=${encodeURIComponent(programName)}&event=${encodeURIComponent(eventType)}` : ''}`
+              : '/events';
 
             return (
               <Link
                 key={`${tx}-${i}`}
-                href={tx ? `/events/${tx}` : '/events'}
+                href={detailHref}
                 className="flex items-center gap-3 py-2.5 px-5 hover:bg-[#1C1C22] transition-colors cursor-pointer"
               >
                 <EventTag className="text-[10px] px-2 py-0.5">{eventType}</EventTag>
