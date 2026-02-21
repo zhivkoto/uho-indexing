@@ -52,8 +52,9 @@ const configSchema = z.object({
   programs: z.array(z.object({
     name: z.string().min(1, 'Program name is required'),
     programId: z.string().min(32, 'Program ID must be a valid base58 public key'),
-    idl: z.string().min(1, 'IDL path is required'),
+    idl: z.string().min(1, 'IDL path or registry name is required'),
     events: z.array(z.string()).optional(),
+    tokenTransfers: z.boolean().optional(),
   })).min(1, 'At least one program must be configured'),
   api: z.object({
     port: z.number().int().min(1).max(65535).default(3000),
@@ -116,7 +117,7 @@ export function validateConfig(raw: unknown): UhoConfig {
  * Loads, parses, and validates a uho.yaml configuration file.
  * If no path is given, searches for the config file automatically.
  */
-export function loadConfig(configPath?: string): UhoConfig {
+export async function loadConfig(configPath?: string): Promise<UhoConfig> {
   const filePath = configPath ? resolve(configPath) : resolveConfigPath();
 
   if (!existsSync(filePath)) {
@@ -134,9 +135,16 @@ export function loadConfig(configPath?: string): UhoConfig {
 
   const config = validateConfig(parsed);
 
-  // Resolve IDL paths relative to the config file directory
+  // Resolve IDL paths: check registry first, then resolve as file path
+  const { lookupRegistry } = await import('./idl-registry.js');
   const configDir = dirname(filePath);
   for (const program of config.programs) {
+    // Skip registry names — they'll be resolved at parse time
+    const registryEntry = lookupRegistry(program.idl);
+    if (registryEntry) {
+      // Keep the registry name as-is; idl-parser will resolve it
+      continue;
+    }
     if (!program.idl.startsWith('/')) {
       program.idl = resolve(configDir, program.idl);
     }

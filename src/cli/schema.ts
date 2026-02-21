@@ -8,10 +8,10 @@
 import { readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { loadConfig } from '../core/config.js';
-import { parseIDL, isShankIDL, parseShankIDL } from '../core/idl-parser.js';
+import { parseAnyIDL } from '../core/idl-parser.js';
 import { generateDDL, applySchema } from '../core/schema-generator.js';
 import { createPool, ensureDatabase } from '../core/db.js';
-import type { AnchorIDL, ShankIDL } from '../core/types.js';
+import { resolveFromRegistry } from '../core/idl-registry.js';
 
 // =============================================================================
 // Schema Command
@@ -26,7 +26,7 @@ export async function schemaCommand(options: {
   // -------------------------------------------------------------------------
   let config;
   try {
-    config = loadConfig(options.config);
+    config = await loadConfig(options.config);
   } catch (err) {
     console.error(`❌ ${(err as Error).message}`);
     process.exit(1);
@@ -38,22 +38,26 @@ export async function schemaCommand(options: {
   const allDdl: string[] = [];
 
   for (const programConfig of config.programs) {
-    const idlPath = resolve(programConfig.idl);
-    if (!existsSync(idlPath)) {
-      console.error(`❌ IDL file not found: ${idlPath}`);
-      process.exit(1);
+    // Try registry first, then file path
+    let rawJson: Record<string, unknown>;
+    const registryResult = resolveFromRegistry(programConfig.idl);
+    if (registryResult) {
+      rawJson = registryResult.rawIdl;
+    } else {
+      const idlPath = resolve(programConfig.idl);
+      if (!existsSync(idlPath)) {
+        console.error(`❌ IDL file not found: ${idlPath}`);
+        process.exit(1);
+      }
+      rawJson = JSON.parse(readFileSync(idlPath, 'utf-8'));
     }
 
-    const rawJson = JSON.parse(readFileSync(idlPath, 'utf-8'));
-
-    const parsed = isShankIDL(rawJson)
-      ? parseShankIDL(rawJson as ShankIDL)
-      : parseIDL(rawJson as AnchorIDL);
+    const { parsed, format } = parseAnyIDL(rawJson);
 
     const ddl = generateDDL(parsed, programConfig);
     allDdl.push(...ddl);
 
-    console.log(`\n📐 Schema for program: ${programConfig.name}${isShankIDL(rawJson) ? ' [shank]' : ''}`);
+    console.log(`\n📐 Schema for program: ${programConfig.name} [${format}]`);
     console.log(`   Events: ${parsed.events.map((e) => e.name).join(', ') || '(none)'}`);
     console.log(`   Instructions: ${parsed.instructions.map((ix) => ix.name).join(', ') || '(none)'}`);
   }

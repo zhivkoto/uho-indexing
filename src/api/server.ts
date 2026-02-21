@@ -16,6 +16,7 @@ import { randomUUID } from 'crypto';
 import type { UhoConfig, ParsedIDL } from '../core/types.js';
 import type { PlatformConfig } from '../core/platform-config.js';
 import { registerEventRoutes, registerInstructionRoutes, registerStatusRoute, registerHealthRoute } from './routes.js';
+import { registerTokenTransferRoutes } from './token-transfer-routes.js';
 import { eventTableNameRaw, instructionTableNameRaw, quoteIdent } from '../core/schema-generator.js';
 import { registerAuthRoutes } from './auth-routes.js';
 import { registerOAuthRoutes } from './oauth-routes.js';
@@ -87,6 +88,12 @@ export async function createServer(
     for (const instruction of parsedIdl.instructions) {
       registerInstructionRoutes(app, pool, parsedIdl.programName, instruction);
     }
+  }
+
+  // Register token transfer routes if any program has tokenTransfers enabled
+  const hasTokenTransfers = config.programs.some((p) => p.tokenTransfers);
+  if (hasTokenTransfers) {
+    registerTokenTransferRoutes(app, pool);
   }
 
   return app;

@@ -12,6 +12,7 @@ import {
   generateDDL,
   generateEventTable,
   generateMetadataTable,
+  generateTokenTransfersTable,
   eventTableName,
 } from '../src/core/schema-generator.js';
 import type { AnchorIDL, ProgramConfig } from '../src/core/types.js';
@@ -33,10 +34,10 @@ const programConfig: ProgramConfig = {
 // =============================================================================
 
 describe('eventTableName', () => {
-  it('generates correct table names', () => {
-    expect(eventTableName('sample_dex', 'SwapEvent')).toBe('sample_dex_swap_event');
-    expect(eventTableName('sample_dex', 'LiquidityEvent')).toBe('sample_dex_liquidity_event');
-    expect(eventTableName('counter', 'IncrementEvent')).toBe('counter_increment_event');
+  it('generates correct quoted table names', () => {
+    expect(eventTableName('sample_dex', 'SwapEvent')).toBe('"sample_dex_swap_event"');
+    expect(eventTableName('sample_dex', 'LiquidityEvent')).toBe('"sample_dex_liquidity_event"');
+    expect(eventTableName('counter', 'IncrementEvent')).toBe('"counter_increment_event"');
   });
 });
 
@@ -67,8 +68,8 @@ describe('generateEventTable', () => {
     const swapEvent = parsed.events[0];
     const ddl = generateEventTable(parsed.programName, swapEvent);
 
-    // Table creation
-    expect(ddl).toContain('CREATE TABLE IF NOT EXISTS sample_dex_swap_event');
+    // Table creation (table name is quoted)
+    expect(ddl).toContain('CREATE TABLE IF NOT EXISTS "sample_dex_swap_event"');
 
     // Standard columns
     expect(ddl).toContain('id');
@@ -119,7 +120,7 @@ describe('generateEventTable', () => {
     const liqEvent = parsed.events[1];
     const ddl = generateEventTable(parsed.programName, liqEvent);
 
-    expect(ddl).toContain('CREATE TABLE IF NOT EXISTS sample_dex_liquidity_event');
+    expect(ddl).toContain('CREATE TABLE IF NOT EXISTS "sample_dex_liquidity_event"');
     expect(ddl).toContain('pool');
     expect(ddl).toContain('provider');
     expect(ddl).toContain('token_a_amount');
@@ -128,20 +129,53 @@ describe('generateEventTable', () => {
 });
 
 // =============================================================================
+// generateTokenTransfersTable
+// =============================================================================
+
+describe('generateTokenTransfersTable', () => {
+  it('generates valid _token_transfers DDL', () => {
+    const ddl = generateTokenTransfersTable();
+    expect(ddl).toContain('CREATE TABLE IF NOT EXISTS _token_transfers');
+    expect(ddl).toContain('program_id');
+    expect(ddl).toContain('instruction_type');
+    expect(ddl).toContain('source');
+    expect(ddl).toContain('destination');
+    expect(ddl).toContain('authority');
+    expect(ddl).toContain('mint');
+    expect(ddl).toContain('NUMERIC(39,0)');
+    expect(ddl).toContain('decimals');
+    expect(ddl).toContain('tx_signature');
+    expect(ddl).toContain('ix_index');
+    expect(ddl).toContain('inner_ix_index');
+  });
+
+  it('includes proper indexes', () => {
+    const ddl = generateTokenTransfersTable();
+    expect(ddl).toContain('idx_token_transfers_slot');
+    expect(ddl).toContain('idx_token_transfers_tx');
+    expect(ddl).toContain('idx_token_transfers_source');
+    expect(ddl).toContain('idx_token_transfers_destination');
+    expect(ddl).toContain('idx_token_transfers_mint');
+    expect(ddl).toContain('uq_token_transfers_tx');
+  });
+});
+
+// =============================================================================
 // generateDDL (full)
 // =============================================================================
 
 describe('generateDDL', () => {
-  it('generates DDL for all events plus metadata table', () => {
+  it('generates DDL for all events plus metadata + tx_logs tables', () => {
     const ddl = generateDDL(parsed, programConfig);
 
-    // Should include metadata table + 2 event tables + 2 instruction tables
-    expect(ddl.length).toBe(5);
+    // Should include metadata + tx_logs + 2 event tables + 2 instruction tables
+    expect(ddl.length).toBe(6);
     expect(ddl[0]).toContain('_uho_state');
-    expect(ddl[1]).toContain('sample_dex_swap_event');
-    expect(ddl[2]).toContain('sample_dex_liquidity_event');
-    expect(ddl[3]).toContain('sample_dex_swap_ix');
-    expect(ddl[4]).toContain('sample_dex_add_liquidity_ix');
+    expect(ddl[1]).toContain('_tx_logs');
+    expect(ddl[2]).toContain('sample_dex_swap_event');
+    expect(ddl[3]).toContain('sample_dex_liquidity_event');
+    expect(ddl[4]).toContain('sample_dex_swap_ix');
+    expect(ddl[5]).toContain('sample_dex_add_liquidity_ix');
   });
 
   it('respects event whitelist filter', () => {
@@ -151,12 +185,29 @@ describe('generateDDL', () => {
     };
     const ddl = generateDDL(parsed, filteredConfig);
 
-    // Metadata + 1 event table + 2 instruction tables
-    expect(ddl.length).toBe(4);
+    // Metadata + tx_logs + 1 event table + 2 instruction tables
+    expect(ddl.length).toBe(5);
     expect(ddl[0]).toContain('_uho_state');
-    expect(ddl[1]).toContain('sample_dex_swap_event');
-    expect(ddl[2]).toContain('sample_dex_swap_ix');
-    expect(ddl[3]).toContain('sample_dex_add_liquidity_ix');
+    expect(ddl[1]).toContain('_tx_logs');
+    expect(ddl[2]).toContain('sample_dex_swap_event');
+    expect(ddl[3]).toContain('sample_dex_swap_ix');
+    expect(ddl[4]).toContain('sample_dex_add_liquidity_ix');
+  });
+
+  it('includes token transfers table when tokenTransfers is enabled', () => {
+    const tokenConfig: ProgramConfig = {
+      ...programConfig,
+      tokenTransfers: true,
+    };
+    const ddl = generateDDL(parsed, tokenConfig);
+
+    // Should include metadata + tx_logs + 2 events + 2 instructions + 1 token_transfers
+    expect(ddl.length).toBe(7);
+    const tokenDdl = ddl[ddl.length - 1];
+    expect(tokenDdl).toContain('_token_transfers');
+    expect(tokenDdl).toContain('program_id');
+    expect(tokenDdl).toContain('instruction_type');
+    expect(tokenDdl).toContain('NUMERIC(39,0)');
   });
 
   it('handles IF NOT EXISTS for idempotent schema application', () => {
