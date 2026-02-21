@@ -6,7 +6,7 @@
  */
 
 import type pg from 'pg';
-import type { ParsedIDL, DecodedEvent, DecodedInstruction, IndexerState, ParsedEvent, ParsedInstruction } from '../core/types.js';
+import type { ParsedIDL, DecodedEvent, DecodedInstruction, DecodedTokenTransfer, IndexerState, ParsedEvent, ParsedInstruction } from '../core/types.js';
 import { eventTableName, instructionTableName } from '../core/schema-generator.js';
 import { toSnakeCase } from '../core/idl-parser.js';
 
@@ -99,6 +99,63 @@ export class EventWriter {
     } catch (err) {
       await client.query('ROLLBACK');
       throw new Error(`Failed to write instructions batch: ${(err as Error).message}`);
+    } finally {
+      client.release();
+    }
+
+    return written;
+  }
+
+  /**
+   * Writes a batch of decoded token transfers to the _token_transfers table.
+   * Returns the number of transfers successfully written.
+   */
+  async writeTokenTransfers(transfers: DecodedTokenTransfer[]): Promise<number> {
+    if (transfers.length === 0) return 0;
+
+    const client = await this.pool.connect();
+    let written = 0;
+
+    try {
+      await client.query('BEGIN');
+
+      for (const transfer of transfers) {
+        const blockTimeValue = transfer.blockTime
+          ? new Date(transfer.blockTime * 1000).toISOString()
+          : null;
+
+        const sql = `
+          INSERT INTO _token_transfers
+            (program_id, instruction_type, source, destination, authority,
+             mint, amount, decimals, slot, block_time, tx_signature,
+             ix_index, inner_ix_index)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          ON CONFLICT DO NOTHING
+        `;
+
+        const result = await client.query(sql, [
+          transfer.programId,
+          transfer.instructionType,
+          transfer.source,
+          transfer.destination,
+          transfer.authority,
+          transfer.mint,
+          transfer.amount,
+          transfer.decimals,
+          transfer.slot,
+          blockTimeValue,
+          transfer.txSignature,
+          transfer.ixIndex,
+          transfer.innerIxIndex,
+        ]);
+
+        if ((result.rowCount ?? 0) > 0) written++;
+      }
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw new Error(`Failed to write token transfers: ${(err as Error).message}`);
     } finally {
       client.release();
     }

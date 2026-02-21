@@ -7,7 +7,7 @@
  */
 
 import type pg from 'pg';
-import type { ParsedIDL, DecodedEvent, DecodedInstruction, SubscriberInfo, WriteResult } from '../core/types.js';
+import type { ParsedIDL, DecodedEvent, DecodedInstruction, DecodedTokenTransfer, SubscriberInfo, WriteResult } from '../core/types.js';
 import { EventWriter } from './writer.js';
 import { inUserSchema } from '../core/db.js';
 
@@ -33,7 +33,8 @@ export class FanoutWriter {
     events: DecodedEvent[],
     instructions: DecodedInstruction[],
     subscribers: SubscriberInfo[],
-    txLogs?: Array<{ txSignature: string; slot: number; logMessages: string[] }>
+    txLogs?: Array<{ txSignature: string; slot: number; logMessages: string[] }>,
+    tokenTransfers?: DecodedTokenTransfer[]
   ): Promise<WriteResult> {
     const result: WriteResult = { totalWritten: 0, perSubscriber: {} };
 
@@ -46,8 +47,9 @@ export class FanoutWriter {
         const enabledInstructions = instructions.filter((ix) =>
           sub.enabledInstructions.includes(ix.instructionName)
         );
+        const subTokenTransfers = sub.tokenTransfers ? (tokenTransfers ?? []) : [];
 
-        if (enabledEvents.length === 0 && enabledInstructions.length === 0) continue;
+        if (enabledEvents.length === 0 && enabledInstructions.length === 0 && subTokenTransfers.length === 0) continue;
 
         // Write to subscriber's schema using a schema-scoped client
         const written = await inUserSchema(this.pool, sub.schemaName, async (client) => {
@@ -64,6 +66,10 @@ export class FanoutWriter {
 
           if (enabledInstructions.length > 0) {
             count += await writer.writeInstructions(enabledInstructions);
+          }
+
+          if (subTokenTransfers.length > 0) {
+            count += await writer.writeTokenTransfers(subTokenTransfers);
           }
 
           // Write transaction logs (only for txs that had events/instructions written)

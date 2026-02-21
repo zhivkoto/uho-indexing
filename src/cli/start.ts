@@ -10,15 +10,17 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { resolve, join } from 'path';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { loadConfig, getDefaultRpcUrl } from '../core/config.js';
-import { parseIDL, isShankIDL, parseShankIDL } from '../core/idl-parser.js';
+import { parseAnyIDL, type IdlFormat } from '../core/idl-parser.js';
 import { generateDDL, applySchema } from '../core/schema-generator.js';
 import { createPool, ensureDatabase } from '../core/db.js';
 import { TransactionPoller } from '../ingestion/poller.js';
 import { EventDecoder } from '../ingestion/decoder.js';
 import { InstructionDecoder } from '../ingestion/instruction-decoder.js';
+import { TokenTransferDecoder } from '../ingestion/token-transfer-decoder.js';
 import { EventWriter } from '../ingestion/writer.js';
 import { createServer, startServer } from '../api/server.js';
-import type { AnchorIDL, ShankIDL, ParsedIDL, UhoConfig } from '../core/types.js';
+import { resolveFromRegistry } from '../core/idl-registry.js';
+import type { AnchorIDL, ParsedIDL, UhoConfig } from '../core/types.js';
 
 // =============================================================================
 // Start Command
@@ -30,7 +32,7 @@ export async function startCommand(options: { config?: string }): Promise<void> 
   // -------------------------------------------------------------------------
   let config;
   try {
-    config = loadConfig(options.config);
+    config = await loadConfig(options.config);
   } catch (err) {
     console.error(`❌ ${(err as Error).message}`);
     process.exit(1);
@@ -42,29 +44,33 @@ export async function startCommand(options: { config?: string }): Promise<void> 
   // -------------------------------------------------------------------------
   const parsedIdls: ParsedIDL[] = [];
   const rawIdls: Map<string, AnchorIDL> = new Map();
-  const shankPrograms = new Set<string>(); // Track which programs use Shank IDLs
+  const idlFormats: Map<string, IdlFormat> = new Map();
 
   for (const program of config.programs) {
-    const idlPath = resolve(program.idl);
-    if (!existsSync(idlPath)) {
-      console.error(`❌ IDL file not found: ${idlPath}`);
-      process.exit(1);
+    // Try registry first, then file path
+    let rawJson: Record<string, unknown>;
+    const registryResult = resolveFromRegistry(program.idl);
+    if (registryResult) {
+      rawJson = registryResult.rawIdl;
+      console.log(`  📦 Using built-in IDL: ${registryResult.entry.name}`);
+    } else {
+      const idlPath = resolve(program.idl);
+      if (!existsSync(idlPath)) {
+        console.error(`❌ IDL file not found: ${idlPath}`);
+        process.exit(1);
+      }
+      rawJson = JSON.parse(readFileSync(idlPath, 'utf-8'));
     }
 
-    const rawJson = JSON.parse(readFileSync(idlPath, 'utf-8'));
+    const { parsed, format } = parseAnyIDL(rawJson);
+    parsedIdls.push(parsed);
+    idlFormats.set(program.programId, format);
 
-    if (isShankIDL(rawJson)) {
-      // Shank IDL — parse for instruction indexing
-      console.log(`  📋 Detected Shank IDL for ${program.name}`);
-      const parsed = parseShankIDL(rawJson as ShankIDL);
-      parsedIdls.push(parsed);
-      shankPrograms.add(program.programId);
-    } else {
-      // Anchor IDL — existing event indexing path
-      const rawIdl = rawJson as AnchorIDL;
+    console.log(`  📋 Detected ${format} IDL for ${program.name}`);
 
-      // Normalize v0.30+ IDL: merge event fields from types array into events
-      // BorshCoder needs events to have fields directly for deserialization
+    if (format === 'anchor') {
+      // Anchor IDL — normalize v0.30+ event fields for BorshCoder
+      const rawIdl = rawJson as unknown as AnchorIDL;
       if (rawIdl.types && rawIdl.events) {
         const typesMap = new Map<string, any>();
         for (const t of rawIdl.types) {
@@ -78,9 +84,6 @@ export async function startCommand(options: { config?: string }): Promise<void> 
           }
         }
       }
-
-      const parsed = parseIDL(rawIdl);
-      parsedIdls.push(parsed);
       rawIdls.set(program.programId, rawIdl);
     }
   }
@@ -107,7 +110,11 @@ export async function startCommand(options: { config?: string }): Promise<void> 
   const eventNames = parsedIdls.flatMap((p) => p.events.map((e) => e.name));
   const instructionNames = parsedIdls.flatMap((p) => p.instructions.map((ix) => ix.name));
   const programSummary = config.programs
-    .map((p) => `  ${p.name} (${p.programId.slice(0, 8)}...${p.programId.slice(-4)})${shankPrograms.has(p.programId) ? ' [shank]' : ''}`)
+    .map((p) => {
+      const fmt = idlFormats.get(p.programId) ?? 'anchor';
+      const transfers = p.tokenTransfers ? ' +transfers' : '';
+      return `  ${p.name} (${p.programId.slice(0, 8)}...${p.programId.slice(-4)}) [${fmt}${transfers}]`;
+    })
     .join('\n');
 
   console.log(`
@@ -144,9 +151,11 @@ DB:       postgresql://${config.database.user}@${config.database.host}:${config.
       }
     );
 
-    const isShank = shankPrograms.has(programConfig.programId);
-    const eventDecoder = isShank ? null : new EventDecoder(parsedIdl, rawIdls.get(programConfig.programId)!);
-    const instructionDecoder = isShank ? new InstructionDecoder(parsedIdl) : null;
+    const format = idlFormats.get(programConfig.programId) ?? 'anchor';
+    const isNonAnchor = format === 'shank' || format === 'codama';
+    const eventDecoder = isNonAnchor ? null : new EventDecoder(parsedIdl, rawIdls.get(programConfig.programId)!);
+    const instructionDecoder = parsedIdl.instructions.length > 0 ? new InstructionDecoder(parsedIdl) : null;
+    const tokenTransferDecoder = programConfig.tokenTransfers ? new TokenTransferDecoder() : null;
     const writer = new EventWriter(pool, parsedIdl);
 
     // Resume from last known state
@@ -170,8 +179,8 @@ DB:       postgresql://${config.database.user}@${config.database.host}:${config.
       for (const tx of txs) {
         const sig = tx.transaction.signatures[0];
 
-        if (isShank && instructionDecoder) {
-          // Shank path: decode instructions from transaction data
+        if (isNonAnchor && instructionDecoder) {
+          // Shank/Codama path: decode instructions from transaction data
           const instructions = instructionDecoder.decodeTransaction(tx);
           if (instructions.length > 0) {
             console.log(`  ✅ Found ${instructions.length} instruction(s) in tx ${sig.slice(0, 8)}...`);
@@ -195,6 +204,16 @@ DB:       postgresql://${config.database.user}@${config.database.host}:${config.
             }
           }
         }
+
+        // Token transfer tracking (cross-cutting — works on any transaction)
+        if (tokenTransferDecoder) {
+          const transfers = tokenTransferDecoder.decodeTransaction(tx);
+          if (transfers.length > 0) {
+            const written = await writer.writeTokenTransfers(transfers);
+            totalIndexed += written;
+            console.log(`  💰 Found ${transfers.length} token transfer(s) in tx ${sig.slice(0, 8)}...`);
+          }
+        }
       }
 
       // Update state after each batch
@@ -208,7 +227,7 @@ DB:       postgresql://${config.database.user}@${config.database.host}:${config.
       });
 
       if (totalIndexed > 0) {
-        console.log(`  📥 ${programConfig.name}: indexed ${totalIndexed} ${isShank ? 'instructions' : 'events'} from ${txs.length} transactions`);
+        console.log(`  📥 ${programConfig.name}: indexed ${totalIndexed} item(s) from ${txs.length} transactions`);
       }
     });
 
