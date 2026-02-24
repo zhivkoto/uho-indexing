@@ -67,7 +67,7 @@ export function parseCodamaIDL(idl: CodamaIDL): ParsedIDL {
       discBuf = computeInstructionDiscriminator(ix.name);
     }
 
-    const args: ParsedField[] = (ix.args ?? []).map((arg) => {
+    const args: ParsedField[] = (ix.arguments ?? ix.args ?? []).map((arg: any) => {
       const typeStr = typeof arg.type === 'string' ? arg.type : 'unknown';
       const mapped = PRIMITIVE_TYPE_MAP[typeStr];
       return {

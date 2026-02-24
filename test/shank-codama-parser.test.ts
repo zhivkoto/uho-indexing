@@ -177,6 +177,30 @@ describe('parseCodamaIDL', () => {
     expect(parsed.instructions[0].args[0].sqlType).toBe('BIGINT');
   });
 
+  it('parses Codama IDL with "arguments" field (true Codama format)', () => {
+    const codamaIdl: CodamaIDL = {
+      version: '1.0.0',
+      name: 'true_codama',
+      address: 'Codama1111111111111111111111111111111111111',
+      instructions: [
+        {
+          name: 'transfer',
+          accounts: [{ name: 'from', writable: true }, { name: 'to', writable: true }],
+          arguments: [{ name: 'amount', type: 'u64' }, { name: 'decimals', type: 'u8' }],
+          discriminant: { type: 'u8', value: 3 },
+        },
+      ],
+      metadata: { origin: 'codama' },
+    };
+
+    const parsed = parseCodamaIDL(codamaIdl);
+    expect(parsed.instructions[0].args.length).toBe(2);
+    expect(parsed.instructions[0].args[0].name).toBe('amount');
+    expect(parsed.instructions[0].args[0].sqlType).toBe('BIGINT');
+    expect(parsed.instructions[0].args[1].name).toBe('decimals');
+    expect(parsed.instructions[0].args[1].sqlType).toBe('INTEGER');
+  });
+
   it('parses Codama IDL with discriminator array (Anchor-style)', () => {
     const codamaIdl: CodamaIDL = {
       version: '1.0.0',
@@ -261,5 +285,32 @@ describe('parseAnyIDL', () => {
     expect(format).toBe('codama');
     expect(parsed.programId).toBe('Codama1111111111111111111111111111111111111');
     expect(parsed.instructions[0].args[0].name).toBe('amount');
+  });
+});
+
+describe('Real-world IDL parsing', () => {
+  it('parses Metaplex Core IDL (Shank, real-world)', () => {
+    const idlPath = resolve(__dirname, '../fixtures/mpl-core-idl.json');
+    const idl = JSON.parse(readFileSync(idlPath, 'utf-8'));
+
+    expect(detectIdlFormat(idl)).toBe('shank');
+
+    const { parsed, format } = parseAnyIDL(idl);
+    expect(format).toBe('shank');
+    expect(parsed.programId).toBe('CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d');
+    expect(parsed.programName).toBe('mpl_core_program');
+    expect(parsed.instructions.length).toBe(33);
+
+    // Verify key instructions exist
+    const ixNames = parsed.instructions.map(i => i.name);
+    expect(ixNames).toContain('CreateV1');
+    expect(ixNames).toContain('TransferV1');
+    expect(ixNames).toContain('BurnV1');
+
+    // Verify discriminant parsing
+    const createV1 = parsed.instructions.find(i => i.name === 'CreateV1');
+    expect(createV1!.discriminator).toEqual(Buffer.from([0]));
+    const transferV1 = parsed.instructions.find(i => i.name === 'TransferV1');
+    expect(transferV1!.discriminator).toEqual(Buffer.from([14]));
   });
 });

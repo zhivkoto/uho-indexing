@@ -6,6 +6,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import { TokenTransferDecoder } from '../src/ingestion/token-transfer-decoder.js';
 import bs58 from 'bs58';
 
@@ -557,5 +559,33 @@ describe('TokenTransferDecoder', () => {
       expect(results[1].instructionType).toBe('transferChecked');
       expect(results[1].innerIxIndex).toBe(0);
     });
+  });
+});
+
+describe('Token Transfer Decoder — Real Mainnet Fixture', () => {
+  it('extracts transferChecked from real swap tx', () => {
+    const fixturePath = resolve(__dirname, 'fixtures/spl-token-transfer-tx.json');
+    const rpcResponse = JSON.parse(readFileSync(fixturePath, 'utf-8'));
+    const tx = rpcResponse.result;
+
+    const decoder = new TokenTransferDecoder();
+    const transfers = decoder.decodeTransaction(tx);
+
+    // This tx has 6 transferChecked inner instructions (AMM swap)
+    expect(transfers.length).toBeGreaterThanOrEqual(6);
+
+    // All should be transferChecked type
+    const checked = transfers.filter(t => t.instructionType === 'transferChecked');
+    expect(checked.length).toBeGreaterThanOrEqual(6);
+
+    // Each should have valid fields
+    for (const t of transfers) {
+      expect(t.txSignature).toBeTruthy();
+      expect(t.programId).toBe('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
+      expect(t.source).toBeTruthy();
+      expect(t.destination).toBeTruthy();
+      expect(t.amount).toBeTruthy();
+      expect(t.mint).toBeTruthy(); // transferChecked includes mint
+    }
   });
 });
