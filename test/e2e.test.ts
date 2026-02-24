@@ -24,11 +24,11 @@ import type { AnchorIDL, DecodedEvent, UhoConfig, ProgramConfig } from '../src/c
 const TEST_DB_NAME = 'uho_test';
 
 const testDbConfig: UhoConfig['database'] = {
-  host: 'localhost',
-  port: 5432,
+  host: process.env.PGHOST || 'localhost',
+  port: Number(process.env.PGPORT) || 5432,
   name: TEST_DB_NAME,
-  user: 'zhivkoto',
-  password: '',
+  user: process.env.PGUSER || 'zhivkoto',
+  password: process.env.PGPASSWORD || '',
 };
 
 const testConfig: UhoConfig = {
