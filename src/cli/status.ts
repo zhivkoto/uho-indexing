@@ -60,7 +60,7 @@ export async function statusCommand(options: { config?: string }): Promise<void>
   // 2. Query database for program states
   // -------------------------------------------------------------------------
   try {
-    const config = loadConfig(options.config);
+    const config = await loadConfig(options.config);
     const pool = createPool(config.database);
 
     try {

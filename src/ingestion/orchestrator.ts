@@ -9,11 +9,12 @@
 
 import { Connection, PublicKey } from '@solana/web3.js';
 import type pg from 'pg';
-import type { ParsedIDL, AnchorIDL, SubscriberInfo, DecodedEvent, DecodedInstruction } from '../core/types.js';
-import { parseIDL } from '../core/idl-parser.js';
+import type { ParsedIDL, AnchorIDL, SubscriberInfo, DecodedEvent, DecodedInstruction, DecodedTokenTransfer } from '../core/types.js';
+import { parseAnyIDL } from '../core/idl-parser.js';
 import { TransactionPoller } from './poller.js';
 import { EventDecoder } from './decoder.js';
 import { InstructionDecoder } from './instruction-decoder.js';
+import { TokenTransferDecoder } from './token-transfer-decoder.js';
 import { FanoutWriter } from './fanout-writer.js';
 
 // =============================================================================
@@ -26,6 +27,7 @@ interface ActiveProgram {
   poller: TransactionPoller;
   decoder: EventDecoder;
   instructionDecoder: InstructionDecoder | null;
+  tokenTransferDecoder: TokenTransferDecoder | null;
   fanoutWriter: FanoutWriter;
   parsedIdl: ParsedIDL;
   subscribers: SubscriberInfo[];
@@ -203,6 +205,9 @@ export class IndexerOrchestrator {
       const instructionDecoder = parsedIdl.instructions.length > 0
         ? new InstructionDecoder(parsedIdl)
         : null;
+      // Create token transfer decoder if any subscriber has tokenTransfers enabled
+      const hasTokenTransfers = subscribers.some((s) => s.tokenTransfers);
+      const tokenTransferDecoder = hasTokenTransfers ? new TokenTransferDecoder() : null;
       const fanoutWriter = new FanoutWriter(this.pool);
 
       this.programs.set(programId, {
@@ -210,6 +215,7 @@ export class IndexerOrchestrator {
         poller,
         decoder,
         instructionDecoder,
+        tokenTransferDecoder,
         fanoutWriter,
         parsedIdl,
         subscribers,
@@ -242,11 +248,15 @@ export class IndexerOrchestrator {
           if (txs.length > 0) {
             const events: DecodedEvent[] = [];
             const instructions: DecodedInstruction[] = [];
+            const tokenTransfers: DecodedTokenTransfer[] = [];
             const txLogs: Array<{ txSignature: string; slot: number; logMessages: string[] }> = [];
             for (const tx of txs) {
               events.push(...program.decoder.decodeTransaction(tx));
               if (program.instructionDecoder) {
                 instructions.push(...program.instructionDecoder.decodeTransaction(tx));
+              }
+              if (program.tokenTransferDecoder) {
+                tokenTransfers.push(...program.tokenTransferDecoder.decodeTransaction(tx));
               }
               // Collect transaction logs
               if (tx.meta?.logMessages?.length) {
@@ -261,13 +271,14 @@ export class IndexerOrchestrator {
               }
             }
 
-            if (events.length > 0 || instructions.length > 0) {
+            if (events.length > 0 || instructions.length > 0 || tokenTransfers.length > 0) {
               await program.fanoutWriter.writeToSubscribers(
                 program.programId,
                 events,
                 instructions,
                 program.subscribers,
-                txLogs
+                txLogs,
+                tokenTransfers
               );
             }
           }
@@ -343,7 +354,7 @@ export class IndexerOrchestrator {
     for (const sub of subscribersJson) {
       try {
         const rawIdl = sub.idl;
-        const parsedIdl = parseIDL(rawIdl as unknown as AnchorIDL);
+        const { parsed: parsedIdl } = parseAnyIDL(rawIdl);
 
         const enabledEvents = (sub.enabled_events ?? [])
           .filter((e) => e.event_type === 'event')
@@ -360,6 +371,7 @@ export class IndexerOrchestrator {
           enabledEvents,
           enabledInstructions,
           rawIdl,
+          tokenTransfers: sub.config?.tokenTransfers === true,
         });
       } catch (err) {
         console.error(
