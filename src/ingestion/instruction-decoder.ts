@@ -9,6 +9,7 @@
 import bs58 from 'bs58';
 import type { ParsedTransactionWithMeta } from '@solana/web3.js';
 import type { ParsedIDL, ParsedInstruction, DecodedInstruction, ParsedField } from '../core/types.js';
+import { toSnakeCase } from '../core/idl-parser.js';
 
 // =============================================================================
 // Instruction Decoder
@@ -45,13 +46,15 @@ export class InstructionDecoder {
     // Check top-level instructions
     for (let i = 0; i < message.instructions.length; i++) {
       const ix = message.instructions[i];
-
-      if (!('data' in ix)) continue;
-      if (!ix.programId || !ix.data || !ix.accounts) continue;
       const ixPid = ix.programId.toBase58();
       if (ixPid !== programId) continue;
 
-      const decoded = this.decodeInstructionData(ix.data, ix.accounts.map((a: any) => a.toBase58?.() ?? String(a)));
+      const decoded = ('data' in ix && ix.data && ix.accounts)
+        ? this.decodeInstructionData(ix.data, ix.accounts.map((a: any) => a.toBase58?.() ?? String(a)))
+        : ('parsed' in ix && ix.parsed)
+          ? this.decodeParsedInstruction(ix.parsed, ix)
+          : null;
+
       if (decoded) {
         results.push({
           ...decoded,
@@ -69,11 +72,15 @@ export class InstructionDecoder {
     for (const inner of innerInstructions) {
       for (let j = 0; j < inner.instructions.length; j++) {
         const ix = inner.instructions[j];
-        if (!('data' in ix)) continue;
-        if (!ix.programId || !ix.data || !ix.accounts) continue;
-        if (ix.programId.toBase58() !== programId) continue;
+        const ixPid = ix.programId.toBase58();
+        if (ixPid !== programId) continue;
 
-        const decoded = this.decodeInstructionData(ix.data, ix.accounts.map((a: any) => a.toBase58?.() ?? String(a)));
+        const decoded = ('data' in ix && ix.data && ix.accounts)
+          ? this.decodeInstructionData(ix.data, ix.accounts.map((a: any) => a.toBase58?.() ?? String(a)))
+          : ('parsed' in ix && ix.parsed)
+            ? this.decodeParsedInstruction(ix.parsed, ix)
+            : null;
+
         if (decoded) {
           results.push({
             ...decoded,
@@ -93,6 +100,64 @@ export class InstructionDecoder {
     }
 
     return results;
+  }
+
+  /**
+   * Handles RPC-parsed instructions (e.g. SPL Token instructions come pre-parsed).
+   * Maps the parsed type/info to our IDL instruction definitions.
+   */
+  private decodeParsedInstruction(
+    parsed: any,
+    ix: any
+  ): Pick<DecodedInstruction, 'instructionName' | 'accounts' | 'args'> | null {
+    if (!parsed || !parsed.type) return null;
+
+    // Map RPC parsed type names to our IDL instruction names (case-insensitive match)
+    const parsedType = parsed.type as string;
+    const ixDef = this.instructions.find((def) => {
+      const defNameLower = def.name.toLowerCase();
+      const parsedLower = parsedType.toLowerCase();
+      return defNameLower === parsedLower
+        || defNameLower === parsedLower.replace(/_/g, '')
+        || defNameLower === toSnakeCase(parsedType).replace(/_/g, '');
+    });
+    if (!ixDef) return null;
+
+    const info = parsed.info ?? {};
+
+    // Build args from parsed info, mapping to our field names
+    const args: Record<string, unknown> = {};
+    for (const field of ixDef.args) {
+      const fieldNameCamel = field.name.replace(/_([a-z])/g, (_: string, c: string) => c.toUpperCase());
+      if (info[field.name] !== undefined) {
+        args[field.name] = String(info[field.name]);
+      } else if (info[fieldNameCamel] !== undefined) {
+        args[field.name] = String(info[fieldNameCamel]);
+      } else if (info.tokenAmount?.amount !== undefined && field.name === 'amount') {
+        args[field.name] = String(info.tokenAmount.amount);
+      } else if (info.tokenAmount?.decimals !== undefined && field.name === 'decimals') {
+        args[field.name] = String(info.tokenAmount.decimals);
+      }
+    }
+
+    // Build accounts from parsed info (account pubkeys are in info fields)
+    const accounts: Record<string, string> = {};
+    for (const accName of ixDef.accounts) {
+      const accNameCamel = accName.replace(/_([a-z])/g, (_: string, c: string) => c.toUpperCase());
+      if (info[accName]) {
+        accounts[accName] = info[accName];
+      } else if (info[accNameCamel]) {
+        accounts[accName] = info[accNameCamel];
+      } else if (accName === 'mint_authority' && info.mintAuthority) {
+        accounts[accName] = info.mintAuthority;
+      }
+    }
+
+    return {
+      instructionName: ixDef.name,
+      accounts,
+      args,
+    };
   }
 
   /**

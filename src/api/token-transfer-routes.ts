@@ -80,6 +80,50 @@ export function registerTokenTransferRoutes(
   });
 
   // -----------------------------------------------------------------------
+  // GET /api/v1/transfers/stats — Aggregate statistics
+  // -----------------------------------------------------------------------
+  app.get(`${basePath}/stats`, async (request) => {
+    const query = request.query as Record<string, string>;
+    const { whereClauses, params } = buildTransferWhereClause(query);
+    const whereStr = whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : '';
+
+    const sql = `
+      SELECT
+        COUNT(*)::int as total_transfers,
+        COUNT(DISTINCT mint) as unique_mints,
+        COUNT(DISTINCT source) as unique_sources,
+        COUNT(DISTINCT destination) as unique_destinations,
+        SUM(CASE WHEN instruction_type = 'transfer' THEN 1 ELSE 0 END)::int as transfers,
+        SUM(CASE WHEN instruction_type = 'transferChecked' THEN 1 ELSE 0 END)::int as transfers_checked,
+        SUM(CASE WHEN instruction_type = 'mintTo' THEN 1 ELSE 0 END)::int as mints,
+        SUM(CASE WHEN instruction_type = 'burn' THEN 1 ELSE 0 END)::int as burns,
+        MIN(block_time) as earliest,
+        MAX(block_time) as latest
+      FROM _token_transfers
+      ${whereStr}
+    `;
+
+    const result = await pool.query(sql, params);
+    const row = result.rows[0];
+    return {
+      totalTransfers: row.total_transfers,
+      uniqueMints: Number(row.unique_mints),
+      uniqueSources: Number(row.unique_sources),
+      uniqueDestinations: Number(row.unique_destinations),
+      byType: {
+        transfer: row.transfers,
+        transferChecked: row.transfers_checked,
+        mintTo: row.mints,
+        burn: row.burns,
+      },
+      timeRange: {
+        earliest: row.earliest ? new Date(row.earliest).toISOString() : null,
+        latest: row.latest ? new Date(row.latest).toISOString() : null,
+      },
+    };
+  });
+
+  // -----------------------------------------------------------------------
   // GET /api/v1/transfers/count — Count transfers
   // -----------------------------------------------------------------------
   app.get(`${basePath}/count`, async (request) => {
@@ -137,13 +181,27 @@ function buildTransferWhereClause(
     params.push(parseInt(query.slotTo, 10));
   }
 
+  // Shorthand aliases
+  const ALIASES: Record<string, string> = {
+    type: 'instruction_type',
+    account: 'source', // also check destination below
+  };
+
   // Field-specific filters
   for (const [key, value] of Object.entries(query)) {
     if (['limit', 'offset', 'orderBy', 'order', 'from', 'to', 'slotFrom', 'slotTo'].includes(key)) {
       continue;
     }
 
-    const snakeKey = toSnakeCase(key);
+    // Special case: `account` matches source OR destination
+    if (key === 'account') {
+      whereClauses.push(`("source" = $${paramIdx} OR "destination" = $${paramIdx})`);
+      params.push(value);
+      paramIdx++;
+      continue;
+    }
+
+    const snakeKey = ALIASES[key] ?? toSnakeCase(key);
     if (KNOWN_FIELDS.has(snakeKey)) {
       whereClauses.push(`"${snakeKey}" = $${paramIdx++}`);
       params.push(value);
