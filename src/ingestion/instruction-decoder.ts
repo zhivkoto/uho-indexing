@@ -10,6 +10,7 @@ import bs58 from 'bs58';
 import type { ParsedTransactionWithMeta } from '@solana/web3.js';
 import type { ParsedIDL, ParsedInstruction, DecodedInstruction, ParsedField } from '../core/types.js';
 import { toSnakeCase } from '../core/idl-parser.js';
+import { scanInstructions, extractParsedInfo, type ParsedInstructionInfo } from './instruction-scanner.js';
 
 // =============================================================================
 // Instruction Decoder
@@ -41,19 +42,13 @@ export class InstructionDecoder {
 
     try {
 
-    const message = tx.transaction.message;
-
-    // Check top-level instructions
-    for (let i = 0; i < message.instructions.length; i++) {
-      const ix = message.instructions[i];
+    scanInstructions(tx, (ix, ixIndex) => {
       const ixPid = ix.programId.toBase58();
-      if (ixPid !== programId) continue;
+      if (ixPid !== programId) return;
 
       const decoded = ('data' in ix && ix.data && ix.accounts)
         ? this.decodeInstructionData(ix.data, ix.accounts.map((a: any) => a.toBase58?.() ?? String(a)))
-        : ('parsed' in ix && ix.parsed)
-          ? this.decodeParsedInstruction(ix.parsed, ix)
-          : null;
+        : this.decodeParsedInstruction(extractParsedInfo(ix));
 
       if (decoded) {
         results.push({
@@ -62,37 +57,10 @@ export class InstructionDecoder {
           slot,
           blockTime,
           txSignature,
-          ixIndex: i,
+          ixIndex,
         });
       }
-    }
-
-    // Check inner instructions
-    const innerInstructions = tx.meta?.innerInstructions ?? [];
-    for (const inner of innerInstructions) {
-      for (let j = 0; j < inner.instructions.length; j++) {
-        const ix = inner.instructions[j];
-        const ixPid = ix.programId.toBase58();
-        if (ixPid !== programId) continue;
-
-        const decoded = ('data' in ix && ix.data && ix.accounts)
-          ? this.decodeInstructionData(ix.data, ix.accounts.map((a: any) => a.toBase58?.() ?? String(a)))
-          : ('parsed' in ix && ix.parsed)
-            ? this.decodeParsedInstruction(ix.parsed, ix)
-            : null;
-
-        if (decoded) {
-          results.push({
-            ...decoded,
-            programId,
-            slot,
-            blockTime,
-            txSignature,
-            ixIndex: inner.index,
-          });
-        }
-      }
-    }
+    });
 
     } catch (err) {
       console.error(`[InstructionDecoder] Error decoding tx ${txSignature?.slice(0, 12)}...: ${(err as Error).message}`);
@@ -107,13 +75,12 @@ export class InstructionDecoder {
    * Maps the parsed type/info to our IDL instruction definitions.
    */
   private decodeParsedInstruction(
-    parsed: any,
-    ix: any
+    parsed: ParsedInstructionInfo | null
   ): Pick<DecodedInstruction, 'instructionName' | 'accounts' | 'args'> | null {
-    if (!parsed || !parsed.type) return null;
+    if (!parsed) return null;
 
     // Map RPC parsed type names to our IDL instruction names (case-insensitive match)
-    const parsedType = parsed.type as string;
+    const parsedType = parsed.type;
     const ixDef = this.instructions.find((def) => {
       const defNameLower = def.name.toLowerCase();
       const parsedLower = parsedType.toLowerCase();
@@ -123,7 +90,7 @@ export class InstructionDecoder {
     });
     if (!ixDef) return null;
 
-    const info = parsed.info ?? {};
+    const info = parsed.info;
 
     // Build args from parsed info, mapping to our field names
     const args: Record<string, unknown> = {};
@@ -145,11 +112,11 @@ export class InstructionDecoder {
     for (const accName of ixDef.accounts) {
       const accNameCamel = accName.replace(/_([a-z])/g, (_: string, c: string) => c.toUpperCase());
       if (info[accName]) {
-        accounts[accName] = info[accName];
+        accounts[accName] = info[accName] as string;
       } else if (info[accNameCamel]) {
-        accounts[accName] = info[accNameCamel];
+        accounts[accName] = info[accNameCamel] as string;
       } else if (accName === 'mint_authority' && info.mintAuthority) {
-        accounts[accName] = info.mintAuthority;
+        accounts[accName] = info.mintAuthority as string;
       }
     }
 
